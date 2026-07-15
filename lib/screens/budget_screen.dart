@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/categories.dart';
 import '../providers/app_providers.dart';
 import '../providers/budget_progress.dart';
+import '../theme/app_theme.dart';
 import '../utils/formatters.dart';
+import '../widgets/coach_widgets.dart';
 
 class BudgetScreen extends ConsumerWidget {
   const BudgetScreen({super.key});
@@ -15,25 +17,97 @@ class BudgetScreen extends ConsumerWidget {
     final progress = ref.watch(budgetProgressProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Budgets')),
+      appBar: AppBar(
+        title: const Text('Budgets'),
+        actions: [
+          IconButton(
+            tooltip: 'Let the coach suggest budgets',
+            icon: const Icon(Icons.auto_awesome),
+            onPressed: () => _suggestWithAi(context, ref),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _editBudget(context, ref),
         icon: const Icon(Icons.add),
         label: const Text('Add budget'),
       ),
-      body: progress.isEmpty
-          ? const _EmptyState()
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-              children: [
-                for (final p in progress)
-                  _BudgetTile(
-                    progress: p,
-                    onTap: () => _editBudget(context, ref, existing: p),
-                  ),
-              ],
-            ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+        children: [
+          const _BudgetInsight(),
+          const SizedBox(height: 12),
+          if (progress.isEmpty)
+            const _EmptyState()
+          else
+            for (final p in progress)
+              _BudgetTile(
+                progress: p,
+                onTap: () => _editBudget(context, ref, existing: p),
+              ),
+        ],
+      ),
     );
+  }
+
+  /// Asks the coach to propose limits from ~3 months of history, previews
+  /// them, and applies on confirm.
+  Future<void> _suggestWithAi(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+        const SnackBar(content: Text('Coach is studying your history…')));
+    final suggestions = await ref.read(coachServiceProvider).suggestBudgets();
+    if (!context.mounted) return;
+    if (suggestions.isEmpty) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text(
+              'No suggestions — check your Gemini key in Settings, or add '
+              'more transaction history.')));
+      return;
+    }
+
+    final apply = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Coach\'s suggested budgets'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final e in suggestions.entries)
+                ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(AppCategory.iconFor(e.key),
+                      color: AppCategory.colorFor(e.key), size: 20),
+                  title: Text(e.key),
+                  trailing: Text(formatRupees(e.value),
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Apply all')),
+        ],
+      ),
+    );
+
+    if (apply == true) {
+      final db = ref.read(databaseProvider);
+      for (final e in suggestions.entries) {
+        await db.setBudget(e.key, e.value);
+      }
+      messenger.showSnackBar(SnackBar(
+          content:
+              Text('${suggestions.length} budgets set — safe-to-spend is live.')));
+    }
   }
 
   Future<void> _editBudget(
@@ -48,6 +122,22 @@ class BudgetScreen extends ConsumerWidget {
     await showDialog<void>(
       context: context,
       builder: (_) => _BudgetDialog(existing: existing, taken: taken),
+    );
+  }
+}
+
+/// Proactive AI budget-health line at the top of the Budgets screen.
+class _BudgetInsight extends ConsumerWidget {
+  const _BudgetInsight();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return CoachInsightCard(
+      insight: ref.watch(budgetInsightProvider),
+      icon: Icons.savings_outlined,
+      accent: AppTheme.mint,
+      emptyText: 'Add your Gemini key in Settings and the coach will watch '
+          'your budgets for you.',
     );
   }
 }
@@ -247,23 +337,21 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.savings_outlined,
-                size: 56, color: theme.colorScheme.primary),
-            const SizedBox(height: 12),
-            Text('No budgets yet', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 4),
-            const Text(
-              'Set a monthly limit per category to track your spending.',
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.savings_outlined,
+              size: 56, color: theme.colorScheme.primary),
+          const SizedBox(height: 12),
+          Text('No budgets yet', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 4),
+          const Text(
+            'Set a monthly limit per category to track your spending.',
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }

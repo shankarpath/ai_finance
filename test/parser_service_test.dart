@@ -1,4 +1,5 @@
 import 'package:ai_finance_assistant/models/categories.dart';
+import 'package:ai_finance_assistant/models/parsed_sms.dart';
 import 'package:ai_finance_assistant/services/categorizer_service.dart';
 import 'package:ai_finance_assistant/services/merchant_normalizer.dart';
 import 'package:ai_finance_assistant/services/parser_service.dart';
@@ -143,6 +144,55 @@ void main() {
       sender: 'AX-SHOPXY',
     );
     expect(p, isNull);
+  });
+
+  // ---- Bill / EMI reminders must NOT become income (regression) -----------
+
+  ParsedSms? p(String body, {String sender = 'AD-HDFCBK-S'}) =>
+      parser.parse(body: body, receivedAt: now, sender: sender);
+
+  test('credit-card bill reminder is ignored, not counted as income', () {
+    expect(
+      p('Your HDFC Bank Credit Card ending 4335 payment of Rs.12,500 is due '
+          'on 18-Jul-26. Pay now to avoid late fees.'),
+      isNull,
+    );
+    expect(
+      p('Total Amount Due Rs.8,420 Min Amount Due Rs.421 on your Credit Card. '
+          'Due date 20-Jul.'),
+      isNull,
+    );
+  });
+
+  test('EMI / loan due reminder is ignored', () {
+    expect(
+      p('Reminder: EMI of Rs.3,250 for Loan A/c XX1824 is due on 05-Aug-26. '
+          'Please pay to avoid penalty.'),
+      isNull,
+    );
+    expect(p('Payment of Rs.5,000 towards your Home Loan is due by 07-Aug.'),
+        isNull);
+  });
+
+  test('a real credit-card SPEND is a debit, never income', () {
+    final r = p('Spent Rs.1,299.00 on your HDFC Bank Credit Card ending 4335 '
+        'at AMAZON. Avl limit Rs.40,000.');
+    expect(r, isNotNull);
+    expect(r!.transactionType, 'debit');
+  });
+
+  test('a genuine EMI deduction still parses as a debit', () {
+    final r = p('EMI of Rs.3,250.00 deducted from A/c XX1234 towards Loan '
+        '1824. Avbl Bal Rs.5,000.');
+    expect(r, isNotNull);
+    expect(r!.transactionType, 'debit');
+  });
+
+  test('a real salary credit still works (not over-filtered)', () {
+    final r = p('Rs 55,000.00 credited to your A/c XX9988 towards SALARY. '
+        'Bal Rs.61,200');
+    expect(r, isNotNull);
+    expect(r!.transactionType, 'credit');
   });
 
   test('does not treat payment-app words as a merchant', () {

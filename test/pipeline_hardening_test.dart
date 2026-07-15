@@ -86,11 +86,19 @@ void main() {
   group('Review flag (never silently guess)', () {
     const categorizer = CategorizerService();
 
-    test('low-confidence P2P transfer needs review', () {
+    test('P2P transfers are low-confidence but exempt from the review queue',
+        () {
+      // Thousands of person-to-person payments would drown the queue; they
+      // keep the low-confidence marker on the tile instead.
       final p = parse('Sent Rs.500 to RAHUL KUMAR via UPI 123456789012 '
           'From A/c XX1234');
       final r = categorizer.categorize(p, 'Rahul Kumar');
       expect(r.confidence, lessThan(CategoryResult.reviewThreshold));
+      expect(r.needsReview, isFalse);
+    });
+
+    test('a low-confidence non-transfer guess still needs review', () {
+      const r = CategoryResult(AppCategory.food, 50, 'ai');
       expect(r.needsReview, isTrue);
     });
 

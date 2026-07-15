@@ -20,7 +20,15 @@ class CategoryResult {
   bool get isUnknown => category == AppCategory.others && confidence == 0;
 
   /// Whether this guess should land in the review queue.
-  bool get needsReview => source != 'user' && confidence < reviewThreshold;
+  ///
+  /// P2P transfers are exempt: the person-name heuristic labels thousands of
+  /// them at low confidence, which would drown the queue and make review
+  /// useless. They keep their low-confidence marker on the transaction tile
+  /// and stay tap-correctable there.
+  bool get needsReview =>
+      source != 'user' &&
+      confidence < reviewThreshold &&
+      category != AppCategory.transfer;
 }
 
 /// Assigns a spending [AppCategory] to a parsed transaction using local rules

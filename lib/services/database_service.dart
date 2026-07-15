@@ -90,7 +90,48 @@ class AlertLogs extends Table {
   Set<Column> get primaryKey => {key};
 }
 
-@DriftDatabase(tables: [Transactions, MerchantMemories, Budgets, AlertLogs])
+/// Cached AI-generated coach content (briefings, digests, reports, insight
+/// cards), keyed by kind + period so each is generated once per period rather
+/// than on every open — critical on a free-tier Gemini key.
+class AiInsights extends Table {
+  /// 'briefing' | 'daily' | 'weekly' | 'monthly' | 'card'
+  TextColumn get kind => text()();
+
+  /// e.g. '2026-07-09' (daily kinds), '2026-W28' (weekly), '2026-07' (monthly).
+  TextColumn get periodKey => text()();
+
+  /// Markdown content.
+  TextColumn get content => text()();
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {kind, periodKey};
+}
+
+/// The AI's category verdict for a canonical merchant name, cached so each name
+/// is sent to Gemini at most once — ever. This is what makes "AI categorises
+/// every merchant" survivable on a free-tier key: re-syncs consult the cache
+/// instead of re-billing an API call for a name already seen.
+class MerchantCategoryCache extends Table {
+  TextColumn get canonical => text()();
+  TextColumn get category => text()();
+
+  /// The AI's own confidence (0–100) in this label.
+  IntColumn get confidence => integer()();
+  DateTimeColumn get askedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {canonical};
+}
+
+@DriftDatabase(tables: [
+  Transactions,
+  MerchantMemories,
+  Budgets,
+  AlertLogs,
+  AiInsights,
+  MerchantCategoryCache,
+])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
@@ -98,7 +139,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -123,8 +164,38 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(transactions, transactions.referenceNo);
             await m.addColumn(transactions, transactions.needsReview);
           }
+          if (from < 7) {
+            await m.createTable(aiInsights);
+          }
+          if (from < 8) {
+            await m.createTable(merchantCategoryCache);
+          }
         },
       );
+
+  // ---- AI insight cache ----------------------------------------------------
+
+  Future<AiInsight?> getAiInsight(String kind, String periodKey) =>
+      (select(aiInsights)
+            ..where((i) => i.kind.equals(kind) & i.periodKey.equals(periodKey)))
+          .getSingleOrNull();
+
+  Future<void> saveAiInsight(
+      String kind, String periodKey, String content) async {
+    await into(aiInsights).insertOnConflictUpdate(AiInsightsCompanion.insert(
+      kind: kind,
+      periodKey: periodKey,
+      content: content,
+      createdAt: DateTime.now(),
+    ));
+  }
+
+  /// All weekly/monthly reports, newest first (for the Reports screen).
+  Future<List<AiInsight>> listReports() =>
+      (select(aiInsights)
+            ..where((i) => i.kind.isIn(['weekly', 'monthly']))
+            ..orderBy([(i) => OrderingTerm.desc(i.createdAt)]))
+          .get();
 
   Stream<List<Budget>> watchBudgets() =>
       (select(budgets)..orderBy([(b) => OrderingTerm.asc(b.category)])).watch();
@@ -225,22 +296,6 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
-  /// Distinct canonical merchant names that still lack a confident category
-  /// (i.e. rule-categorised as Others). These are candidates for AI labelling.
-  Future<List<String>> merchantsNeedingCategory() async {
-    final q = selectOnly(transactions, distinct: true)
-      ..addColumns([transactions.merchantCanonical])
-      ..where(transactions.category.equals(AppCategory.others) &
-          transactions.categorySource.equals('ai').not() &
-          transactions.merchantCanonical.isNotNull());
-    final rows = await q.get();
-    return rows
-        .map((r) => r.read(transactions.merchantCanonical))
-        .whereType<String>()
-        .where((s) => s.trim().isNotEmpty)
-        .toList();
-  }
-
   /// Applies an AI/user category to every transaction of a given canonical
   /// merchant (only overwriting rows not already user-confirmed).
   Future<void> applyCategoryToMerchant({
@@ -260,6 +315,28 @@ class AppDatabase extends _$AppDatabase {
       categorySource: Value(source),
       needsReview: Value(needsReview),
     ));
+  }
+
+  // ---- AI merchant-category cache ------------------------------------------
+
+  /// Canonical merchant names the AI has already been asked about (any verdict).
+  /// Consulted before every AI categorisation run so a name is billed once.
+  Future<Set<String>> cachedMerchants() async {
+    final rows = await select(merchantCategoryCache).get();
+    return {for (final r in rows) r.canonical};
+  }
+
+  /// Records the AI's verdict for [canonical] so it is never re-queried.
+  Future<void> cacheMerchantCategory(
+      String canonical, String category, int confidence) async {
+    await into(merchantCategoryCache).insertOnConflictUpdate(
+      MerchantCategoryCacheCompanion.insert(
+        canonical: canonical,
+        category: category,
+        confidence: confidence,
+        askedAt: DateTime.now(),
+      ),
+    );
   }
 
   Future<void> markSubscription(String merchantCanonical, bool value) async {
@@ -294,6 +371,12 @@ class AppDatabase extends _$AppDatabase {
             referenceNo != null ? Value(referenceNo) : const Value.absent(),
       ),
     );
+  }
+
+  /// Removes a stored transaction (used when an improved parser now rejects a
+  /// previously-imported message, e.g. a bill reminder).
+  Future<void> deleteById(int id) async {
+    await (delete(transactions)..where((t) => t.id.equals(id))).go();
   }
 
   /// All transactions, newest first — reactive.

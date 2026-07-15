@@ -17,6 +17,24 @@ class _QuotaException implements Exception {
   _QuotaException(this.message);
 }
 
+/// A tool call the model wants to make on the user's behalf (e.g. set a
+/// budget). Raw name + args; the caller validates and executes it.
+class AiAction {
+  final String name;
+  final Map<String, dynamic> args;
+  const AiAction(this.name, this.args);
+}
+
+/// The outcome of an agentic chat turn: the model's natural-language reply
+/// and/or a list of proposed [AiAction]s awaiting user confirmation.
+class AiChatResult {
+  final String? text;
+  final List<AiAction> actions;
+  const AiChatResult(this.text, this.actions);
+
+  bool get hasActions => actions.isNotEmpty;
+}
+
 /// Minimal client for Google's Gemini `generateContent` REST API.
 ///
 /// This class only performs the HTTP call — the caller is responsible for
@@ -40,11 +58,13 @@ class AiService {
   ];
 
   static const _chatSystemPrompt =
-      'You are a concise personal-finance assistant inside an Indian rupee (INR) '
-      'budgeting app. You are given a JSON summary of the user\'s recent spending. '
-      'Answer their question using ONLY that data. Be brief and specific, use ₹ for '
-      'amounts, and never invent numbers that are not derivable from the summary. '
-      'If the data cannot answer the question, say so plainly.';
+      'You are FinCoach, a sharp, warm personal-finance coach inside an Indian '
+      'rupee (INR, ₹) money app. You are given a JSON summary of the user\'s '
+      'real spending (budgets, safe-to-spend, projections included). Answer '
+      'using ONLY that data — never invent numbers. Be direct, specific and '
+      'encouraging; short paragraphs or bullets; markdown allowed. When the '
+      'user asks for advice, give concrete ₹ amounts and actions. If the data '
+      'cannot answer, say so plainly.';
 
   /// Sends [question] together with a pre-built [contextSummary] (safe,
   /// aggregated spending data) and returns the model's answer text.
@@ -60,6 +80,116 @@ class AiService {
       temperature: 0.3,
       maxTokens: 800,
     );
+  }
+
+  static const _agentSystemPrompt =
+      'You are FinCoach, a sharp, warm personal-finance coach inside an Indian '
+      'rupee (INR, ₹) money app. You are given a JSON summary of the user\'s '
+      'real spending (budgets, safe-to-spend, projections). Answer using ONLY '
+      'that data — never invent numbers. You can also ACT for the user by '
+      'calling the provided tools: set or remove a category budget, set the '
+      'monthly savings goal, or recategorise a merchant. Call a tool ONLY when '
+      'the user clearly asks to change one of those things — otherwise just '
+      'answer. The app shows the user a confirmation before anything is '
+      'applied, so when you call a tool, also add one short line saying what '
+      'you\'re proposing and why. Be direct and specific; markdown allowed.';
+
+  /// Agentic chat: like [chat], but the model may also return tool calls
+  /// (from [tools], in Gemini function-declaration form). Returns the reply
+  /// text and any proposed [AiAction]s. Actions are NOT executed here — the
+  /// caller confirms with the user first.
+  Future<AiChatResult> chatWithActions({
+    required String apiKey,
+    required String question,
+    required String contextSummary,
+    required List<Map<String, dynamic>> tools,
+  }) async {
+    final parts = await _generatePartsWithFallback(
+      apiKey: apiKey,
+      systemPrompt: _agentSystemPrompt,
+      userText:
+          'Spending summary (JSON):\n$contextSummary\n\nUser: $question',
+      temperature: 0.3,
+      maxTokens: 800,
+      tools: tools.isEmpty
+          ? null
+          : [
+              {'function_declarations': tools}
+            ],
+    );
+
+    final buffer = StringBuffer();
+    final actions = <AiAction>[];
+    for (final part in parts) {
+      if (part is! Map<String, dynamic>) continue;
+      final call = part['functionCall'];
+      if (call is Map<String, dynamic>) {
+        final name = call['name'] as String?;
+        final args = (call['args'] as Map?)?.cast<String, dynamic>() ?? {};
+        if (name != null && name.isNotEmpty) actions.add(AiAction(name, args));
+      } else {
+        final text = part['text'] as String?;
+        if (text != null) buffer.write(text);
+      }
+    }
+    final text = buffer.toString().trim();
+    return AiChatResult(text.isEmpty ? null : text, actions);
+  }
+
+  /// General-purpose generation with the model-fallback chain. Powers the
+  /// coach features (briefings, digests, reports). The caller owns the prompt;
+  /// the privacy boundary stays in FinanceContext.
+  Future<String> generate({
+    required String apiKey,
+    required String systemPrompt,
+    required String userText,
+    double temperature = 0.4,
+    int maxTokens = 1000,
+  }) {
+    return _callWithFallback(
+      apiKey: apiKey,
+      systemPrompt: systemPrompt,
+      userText: userText,
+      temperature: temperature,
+      maxTokens: maxTokens,
+    );
+  }
+
+  /// Asks the model to propose monthly budget limits per category from
+  /// 3-month average spend aggregates. Returns category → suggested ₹ limit.
+  Future<Map<String, double>> suggestBudgets({
+    required String apiKey,
+    required Map<String, double> monthlyCategoryAverages,
+    required List<String> allowedCategories,
+  }) async {
+    final system =
+        'You are a budgeting expert for an Indian (INR) personal finance app. '
+        'Given average monthly spend per category, propose a realistic monthly '
+        'budget limit per category: slightly below the average for '
+        'discretionary categories (Food, Shopping, Entertainment, Grocery, '
+        'Travel), at/near the average for fixed ones (Bills, EMI). Round to '
+        'friendly numbers (nearest 100). Only include categories from this '
+        'list: ${allowedCategories.join(", ")}. Skip categories with trivial '
+        'spend (<200). Reply with ONLY a JSON object {"Category": limit, ...} '
+        'with numeric values. No prose.';
+    final raw = await _callWithFallback(
+      apiKey: apiKey,
+      systemPrompt: system,
+      userText: 'Average monthly spend (₹):\n${jsonEncode(monthlyCategoryAverages)}',
+      temperature: 0.0,
+      maxTokens: 600,
+    );
+    final allowed = allowedCategories.toSet();
+    final result = <String, double>{};
+    try {
+      final map = jsonDecode(_extractJsonBlock(raw)) as Map<String, dynamic>;
+      map.forEach((category, value) {
+        if (!allowed.contains(category)) return;
+        final limit = (value is num) ? value.toDouble() : null;
+        if (limit != null && limit > 0) result[category] = limit;
+      });
+    } catch (_) {}
+    return result;
   }
 
   /// Asks the model to categorise a list of merchant names into the app's
@@ -113,6 +243,103 @@ class AiService {
     }
     throw lastQuotaError ??
         AiException('No available Gemini model for this key.');
+  }
+
+  /// Like [_callWithFallback] but returns the raw response `parts` (so the
+  /// caller can read `functionCall` parts). Used by [chatWithActions].
+  Future<List<dynamic>> _generatePartsWithFallback({
+    required String apiKey,
+    required String systemPrompt,
+    required String userText,
+    required double temperature,
+    required int maxTokens,
+    List<Map<String, dynamic>>? tools,
+  }) async {
+    AiException? lastQuotaError;
+    for (final model in _models) {
+      try {
+        return await _generateParts(
+          model: model,
+          apiKey: apiKey,
+          systemPrompt: systemPrompt,
+          userText: userText,
+          temperature: temperature,
+          maxTokens: maxTokens,
+          tools: tools,
+        );
+      } on _QuotaException catch (e) {
+        lastQuotaError = AiException(e.message);
+      }
+    }
+    throw lastQuotaError ??
+        AiException('No available Gemini model for this key.');
+  }
+
+  Future<List<dynamic>> _generateParts({
+    required String model,
+    required String apiKey,
+    required String systemPrompt,
+    required String userText,
+    required double temperature,
+    required int maxTokens,
+    List<Map<String, dynamic>>? tools,
+  }) async {
+    final uri = Uri.parse('$_base/$model:generateContent?key=$apiKey');
+    final generationConfig = <String, dynamic>{
+      'temperature': temperature,
+      'maxOutputTokens': maxTokens,
+    };
+    if (model.contains('2.5')) {
+      generationConfig['thinkingConfig'] = {'thinkingBudget': 0};
+    }
+    final body = jsonEncode({
+      'system_instruction': {
+        'parts': [
+          {'text': systemPrompt}
+        ]
+      },
+      'contents': [
+        {
+          'role': 'user',
+          'parts': [
+            {'text': userText}
+          ]
+        }
+      ],
+      'generationConfig': generationConfig,
+      'tools': ?tools,
+    });
+
+    http.Response res;
+    try {
+      res = await _client
+          .post(uri,
+              headers: {'Content-Type': 'application/json'}, body: body)
+          .timeout(const Duration(seconds: 30));
+    } catch (e) {
+      throw AiException('Network error contacting Gemini. Check your connection.');
+    }
+
+    if (res.statusCode == 429 || res.statusCode >= 500) {
+      throw _QuotaException(_errorMessage(res.statusCode, res.body));
+    }
+    if (res.statusCode != 200) {
+      throw AiException(_errorMessage(res.statusCode, res.body));
+    }
+
+    try {
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
+      final candidates = json['candidates'] as List<dynamic>?;
+      if (candidates == null || candidates.isEmpty) {
+        throw AiException('Gemini returned no answer.');
+      }
+      final parts = (candidates.first['content']?['parts']) as List<dynamic>?;
+      return parts ?? const [];
+    } on AiException {
+      rethrow;
+    } catch (_) {
+      throw AiException('Could not parse the Gemini response.');
+    }
   }
 
   Future<String> _generate({
@@ -220,22 +447,23 @@ class AiService {
     }
   }
 
-  /// Parses the merchant→category JSON, tolerating ```json code fences and
-  /// matching categories case-insensitively against [allowed].
+  /// Extracts the JSON payload from a model reply, tolerating ```json fences
+  /// and surrounding prose.
+  String _extractJsonBlock(String raw) {
+    var text = raw.trim();
+    final fence = RegExp(r'```(?:json)?\s*([\s\S]*?)\s*```').firstMatch(text);
+    if (fence != null) return fence.group(1)!.trim();
+    final brace = RegExp(r'\{[\s\S]*\}').firstMatch(text);
+    return brace?.group(0) ?? text;
+  }
+
+  /// Parses the merchant→category JSON, matching categories
+  /// case-insensitively against [allowed].
   Map<String, ({String category, int confidence})> _parseMerchantMap(
       String raw, List<String> allowed) {
     // Case-insensitive lookup from the model's category string to our canonical.
     final byLower = {for (final c in allowed) c.toLowerCase(): c};
-
-    var text = raw.trim();
-    // Prefer a fenced block, else the first {...} object in the text.
-    final fence = RegExp(r'```(?:json)?\s*([\s\S]*?)\s*```').firstMatch(text);
-    if (fence != null) {
-      text = fence.group(1)!.trim();
-    } else {
-      final brace = RegExp(r'\{[\s\S]*\}').firstMatch(text);
-      if (brace != null) text = brace.group(0)!;
-    }
+    final text = _extractJsonBlock(raw);
 
     final result = <String, ({String category, int confidence})>{};
     try {

@@ -1,8 +1,10 @@
 import 'package:drift/drift.dart';
+import 'package:flutter/foundation.dart' show compute;
 
 import '../models/parsed_sms.dart';
 import '../services/ai_merchant_categorizer.dart';
 import '../services/categorizer_service.dart';
+import '../services/coach_service.dart';
 import '../services/database_service.dart';
 import '../services/duplicate_detector.dart';
 import '../services/merchant_normalizer.dart';
@@ -22,11 +24,16 @@ class TransactionRepository {
   final CategorizerService _categorizer;
   final AiMerchantCategorizer _aiCategorizer;
   final NotificationService _notifications;
+  final CoachService _coach;
   final AppDatabase _db;
   final DuplicateDetector _dupes;
 
   /// Debits at or above this (₹) trigger a large-transaction notification.
   static const _largeTxnThreshold = 3000.0;
+
+  /// Uncertain guesses below this amount (₹) skip the review queue — asking a
+  /// human to review a ₹15 chai payment costs more attention than it protects.
+  static const _reviewMinAmount = 200.0;
 
   TransactionRepository({
     required SmsService sms,
@@ -35,6 +42,7 @@ class TransactionRepository {
     required CategorizerService categorizer,
     required AiMerchantCategorizer aiCategorizer,
     required NotificationService notifications,
+    required CoachService coach,
     required AppDatabase db,
     DuplicateDetector dupes = const DuplicateDetector(),
   })  : _sms = sms,
@@ -43,6 +51,7 @@ class TransactionRepository {
         _categorizer = categorizer,
         _aiCategorizer = aiCategorizer,
         _notifications = notifications,
+        _coach = coach,
         _db = db,
         _dupes = dupes;
 
@@ -56,11 +65,13 @@ class TransactionRepository {
   Future<int> syncInbox() async {
     final inbox = await _sms.readInbox();
     final memory = await _db.merchantMemoryMap();
-    final entries = <(ParsedSms, TransactionsCompanion)>[];
-    for (final raw in inbox) {
-      final entry = _parseToEntry(raw, memory);
-      if (entry != null) entries.add(entry);
-    }
+    // Parsing thousands of SMS is regex-heavy — run it off the UI thread so
+    // the app stays responsive during a full inbox scan.
+    final parsedBatch =
+        await compute(parseInboxBatch, ParseBatchInput(inbox, memory));
+    final entries = <(ParsedSms, TransactionsCompanion)>[
+      for (final e in parsedBatch) (e.parsed, _toCompanion(e.parsed, e.canonical, e.result)),
+    ];
 
     var imported = 0;
     if (entries.isNotEmpty) {
@@ -93,12 +104,43 @@ class TransactionRepository {
   }
 
   /// Post-import enrichment: mark subscriptions, AI-label unknowns, check budget
-  /// alerts, and refresh the scheduled daily summary.
+  /// alerts, and refresh the coach's scheduled content.
   Future<void> enrich() async {
     await _detectSubscriptions();
-    await _aiCategorizer.categorizeUnknowns();
+    await _aiCategorizer.categorizeAll();
     await _checkBudgetAlerts();
     await _scheduleDailySummary();
+    await _refreshCoachContent();
+  }
+
+  /// Generates/refreshes the coach's periodic artifacts (all cached per
+  /// period) and keeps the weekly nudge scheduled. Best-effort.
+  Future<void> _refreshCoachContent() async {
+    try {
+      await _notifications.scheduleWeeklyReportNudge();
+      // Sunday (or later in the week if missed): make sure this week's report
+      // card exists so the nudge has something to show.
+      final now = DateTime.now();
+      if (now.weekday >= DateTime.saturday) await _coach.weeklyReport();
+
+      // Month rollover: generate last month's report once and announce it.
+      final prev = DateTime(now.year, now.month - 1, 1);
+      final prevKey = CoachService.monthKey(prev);
+      final existing = await _db.getAiInsight('monthly', prevKey);
+      if (existing == null && now.day <= 7) {
+        final report = await _coach.monthlyReport(prevKey);
+        if (report != null &&
+            await _db.markAlertOnce('monthlyreport:$prevKey')) {
+          await _notifications.showAlert(
+            prevKey.hashCode & 0x7fffffff,
+            'Your monthly report is ready',
+            'The coach graded last month — see where the money went.',
+          );
+        }
+      }
+    } catch (_) {
+      // Coach content must never break ingestion.
+    }
   }
 
   /// Fires a one-time notification when a category first crosses 80% or 100%
@@ -156,11 +198,13 @@ class TransactionRepository {
       today += t.amount;
       count++;
     }
-    final body = count == 0
+    final fallback = count == 0
         ? 'No spending recorded today.'
         : 'You spent ${formatRupees(today)} across $count '
             'transaction${count == 1 ? '' : 's'} today.';
-    await _notifications.scheduleDailySummary(body);
+    // Prefer the coach-written digest; fall back to the plain template.
+    final digest = await _coach.dailyDigest();
+    await _notifications.scheduleDailySummary(digest ?? fallback);
   }
 
   int _alertId(String kind, String category) =>
@@ -179,6 +223,12 @@ class TransactionRepository {
         // Re-parse the retained SMS body so rows stored before the parser knew
         // about statuses / reference numbers get upgraded too.
         final reparsed = _parser.parse(body: t.smsBody, receivedAt: t.date);
+        // The improved parser now rejects this message entirely (e.g. a bill /
+        // EMI reminder that used to slip through as income) — drop the row.
+        if (reparsed == null) {
+          await _db.deleteById(t.id);
+          continue;
+        }
         final status = reparsed?.status ?? t.status;
         final referenceNo = reparsed?.referenceNo ?? t.referenceNo;
         final parsed = ParsedSms(
@@ -195,15 +245,24 @@ class TransactionRepository {
           status: status,
         );
         final canonical = _normalizer.normalize(t.merchant);
-        final result =
+        final ruleResult =
             _categorizer.categorize(parsed, canonical, memory: memory);
+        // Don't wipe an earlier AI label just because the offline rules still
+        // can't identify the merchant — AI re-labelling is capped per run, so
+        // overwriting would slowly erase knowledge on every reprocess.
+        final keepAiLabel = t.categorySource == 'ai' && ruleResult.isUnknown;
+        final result = keepAiLabel
+            ? CategoryResult(t.category, t.confidence ?? 50, 'ai')
+            : ruleResult;
         await _db.updateEnrichmentById(
           t.id,
           canonical: canonical,
           category: result.category,
           confidence: result.confidence,
           source: result.source,
-          needsReview: status == 'posted' && result.needsReview,
+          needsReview: status == 'posted' &&
+              result.needsReview &&
+              t.amount >= _reviewMinAmount,
           status: status,
           referenceNo: referenceNo,
         );
@@ -231,20 +290,52 @@ class TransactionRepository {
       final isNew = await _db.insertIfNew(companion);
       if (!isNew) return;
 
-      // Alert on a large outgoing payment as it happens (real ones only —
-      // never for a failed/reversed attempt).
-      if (parsed.isDebit &&
-          parsed.isPosted &&
-          parsed.amount >= _largeTxnThreshold) {
-        final merchant = companion.merchantCanonical.value ?? 'a merchant';
-        await _notifications.showAlert(
-          parsed.amount.hashCode & 0x7fffffff,
-          'Large payment',
-          'You paid ${formatRupees(parsed.amount)} to $merchant.',
-        );
+      // Spend-moment awareness: every real debit gets an instant notification
+      // with running context, so money never leaves "without knowing".
+      // (Failed/reversed attempts never notify.)
+      if (parsed.isDebit && parsed.isPosted) {
+        await _notifySpend(parsed, companion);
       }
       await enrich();
     });
+  }
+
+  /// Builds the in-the-moment spend notification: amount + merchant in the
+  /// title, and the running month/budget context in the body.
+  Future<void> _notifySpend(ParsedSms p, TransactionsCompanion c) async {
+    final merchant = c.merchantCanonical.value ?? 'Unknown';
+    final category = c.category.value;
+    final now = DateTime.now();
+    final startOfMonth = DateTime(now.year, now.month, 1);
+    final startOfDay = DateTime(now.year, now.month, now.day);
+
+    double monthInCategory = 0;
+    double todayTotal = 0;
+    for (final t in await _db.allTransactions()) {
+      if (t.transactionType != 'debit' || t.status != 'posted') continue;
+      if (!t.date.isBefore(startOfDay)) todayTotal += t.amount;
+      if (!t.date.isBefore(startOfMonth) && t.category == category) {
+        monthInCategory += t.amount;
+      }
+    }
+
+    Budget? budget;
+    for (final b in await _db.getBudgets()) {
+      if (b.category == category && b.monthlyLimit > 0) {
+        budget = b;
+        break;
+      }
+    }
+
+    final title = p.amount >= _largeTxnThreshold
+        ? 'Large payment: ${formatRupees(p.amount)} · $merchant'
+        : '${formatRupees(p.amount)} · $merchant';
+    final body = budget != null
+        ? '$category this month: ${formatRupees(monthInCategory)} of '
+            '${formatRupees(budget.monthlyLimit)} '
+            '(${(monthInCategory / budget.monthlyLimit * 100).round()}%).'
+        : 'Spent today: ${formatRupees(todayTotal)}.';
+    await _notifications.showAlert(p.smsId.hashCode & 0x7fffffff, title, body);
   }
 
   /// Applies a user's category choice to a merchant: remembers it for the
@@ -284,6 +375,8 @@ class TransactionRepository {
     await _db.confirmTransaction(t.id);
   }
 
+  // ---- Isolate-friendly batch parsing --------------------------------------
+
   (ParsedSms, TransactionsCompanion)? _parseToEntry(
       RawSms raw, Map<String, String> memory) {
     final parsed = _parser.parse(
@@ -317,8 +410,46 @@ class TransactionRepository {
       balance: Value(p.balance),
       status: Value(p.status),
       referenceNo: Value(p.referenceNo),
-      // Only real money movement is worth the user's review time.
-      needsReview: Value(p.isPosted && result.needsReview),
+      // Only real, material money movement is worth the user's review time.
+      needsReview: Value(
+          p.isPosted && result.needsReview && p.amount >= _reviewMinAmount),
     );
   }
+}
+
+/// Input for [parseInboxBatch] (must be a plain sendable object).
+class ParseBatchInput {
+  final List<RawSms> inbox;
+  final Map<String, String> memory;
+  const ParseBatchInput(this.inbox, this.memory);
+}
+
+/// One parsed inbox entry produced off the UI thread.
+class ParsedEntry {
+  final ParsedSms parsed;
+  final String canonical;
+  final CategoryResult result;
+  const ParsedEntry(this.parsed, this.canonical, this.result);
+}
+
+/// Top-level so it can run in a background isolate via [compute]. All three
+/// services are pure Dart with const constructors.
+List<ParsedEntry> parseInboxBatch(ParseBatchInput input) {
+  const parser = ParserService();
+  const normalizer = MerchantNormalizer();
+  const categorizer = CategorizerService();
+  final out = <ParsedEntry>[];
+  for (final raw in input.inbox) {
+    final parsed = parser.parse(
+      body: raw.body,
+      receivedAt: raw.receivedAt,
+      sender: raw.sender,
+      providerId: raw.providerId,
+    );
+    if (parsed == null) continue;
+    final canonical = normalizer.normalize(parsed.merchant ?? 'Unknown');
+    out.add(ParsedEntry(parsed, canonical,
+        categorizer.categorize(parsed, canonical, memory: input.memory)));
+  }
+  return out;
 }

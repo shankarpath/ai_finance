@@ -136,7 +136,9 @@
       "Bash(git config *)",
       "Bash(git remote *)",
       "Bash(git branch *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "PowerShell(flutter build apk --release 2>&1 | Tee-Object -FilePath \"$env:TEMP\\\\flutter_release.log\" | Select-Object -Last 3)",
+      "Bash(awk '{printf \"%.1f MB\\\\n\", $5/1048576}')"
     ]
   }
 }

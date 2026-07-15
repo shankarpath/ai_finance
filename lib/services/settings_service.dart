@@ -31,4 +31,21 @@ class SettingsService {
     final key = await getApiKey();
     return key != null && await hasConsent();
   }
+
+  // ---- Savings goal --------------------------------------------------------
+
+  static const _goalName = 'goal_monthly_save';
+
+  Future<double?> getMonthlySavingsGoal() async {
+    final raw = await _storage.read(key: _goalName);
+    return raw == null ? null : double.tryParse(raw);
+  }
+
+  Future<void> setMonthlySavingsGoal(double? amount) async {
+    if (amount == null || amount <= 0) {
+      await _storage.delete(key: _goalName);
+    } else {
+      await _storage.write(key: _goalName, value: amount.toString());
+    }
+  }
 }

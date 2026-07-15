@@ -2,12 +2,17 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-/// Local notifications for budget alerts, large transactions, and the daily
-/// spending summary. Everything is on-device; nothing is sent anywhere.
+import '../utils/nav_bus.dart';
+
+/// Local notifications for budget alerts, spend-moment alerts, the AI daily
+/// digest, and the weekly report nudge. Everything is on-device; nothing is
+/// sent anywhere. Tapping any coach-flavoured notification opens the Coach tab.
 class NotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   bool _ready = false;
+
+  static const _coachPayload = 'coach';
 
   static const _alertsChannel = AndroidNotificationDetails(
     'alerts',
@@ -15,13 +20,15 @@ class NotificationService {
     channelDescription: 'Budget limits, large transactions and reminders',
     importance: Importance.high,
     priority: Priority.high,
+    styleInformation: BigTextStyleInformation(''),
   );
   static const _summaryChannel = AndroidNotificationDetails(
     'daily_summary',
-    'Daily summary',
-    channelDescription: 'A nightly recap of the day\'s spending',
+    'Coach digest',
+    channelDescription: 'The coach\'s nightly recap and weekly report',
     importance: Importance.defaultImportance,
     priority: Priority.defaultPriority,
+    styleInformation: BigTextStyleInformation(''),
   );
 
   Future<void> init() async {
@@ -35,7 +42,11 @@ class NotificationService {
     }
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _plugin.initialize(
-        settings: const InitializationSettings(android: android));
+      settings: const InitializationSettings(android: android),
+      onDidReceiveNotificationResponse: (response) {
+        if (response.payload == _coachPayload) NavBus.openCoach();
+      },
+    );
     _ready = true;
   }
 
@@ -53,10 +64,12 @@ class NotificationService {
       title: title,
       body: body,
       notificationDetails: const NotificationDetails(android: _alertsChannel),
+      payload: _coachPayload,
     );
   }
 
-  /// (Re)schedules a daily summary notification at [hour] with the given body.
+  /// (Re)schedules the nightly digest notification at [hour] with the given
+  /// body (AI-written when available).
   Future<void> scheduleDailySummary(String body, {int hour = 20}) async {
     if (!_ready) return;
     final now = tz.TZDateTime.now(tz.local);
@@ -65,12 +78,33 @@ class NotificationService {
 
     await _plugin.zonedSchedule(
       id: 900001,
-      title: 'Today\'s spending',
+      title: 'Tonight\'s money check-in',
       body: body,
       scheduledDate: when,
       notificationDetails: const NotificationDetails(android: _summaryChannel),
       androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       matchDateTimeComponents: DateTimeComponents.time,
+      payload: _coachPayload,
+    );
+  }
+
+  /// Weekly nudge every Sunday evening pointing at the report card.
+  Future<void> scheduleWeeklyReportNudge({int hour = 18}) async {
+    if (!_ready) return;
+    final now = tz.TZDateTime.now(tz.local);
+    var when = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour);
+    while (when.weekday != DateTime.sunday || !when.isAfter(now)) {
+      when = when.add(const Duration(days: 1));
+    }
+    await _plugin.zonedSchedule(
+      id: 900002,
+      title: 'Your weekly report card is ready',
+      body: 'See your grade, wins and leaks for the week.',
+      scheduledDate: when,
+      notificationDetails: const NotificationDetails(android: _summaryChannel),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+      payload: _coachPayload,
     );
   }
 }

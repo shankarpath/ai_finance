@@ -33,6 +33,10 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // No code shrinking: avoids R8 stripping notification/sqlcipher
+            // internals in sideloaded builds. Size matters less than working.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

@@ -4,6 +4,7 @@ import '../repositories/transaction_repository.dart';
 import '../services/ai_merchant_categorizer.dart';
 import '../services/ai_service.dart';
 import '../services/categorizer_service.dart';
+import '../services/coach_service.dart';
 import '../services/database_service.dart';
 import '../services/export_service.dart';
 import '../services/merchant_normalizer.dart';
@@ -14,6 +15,7 @@ import '../services/sms_service.dart';
 import 'analytics_data.dart';
 import 'budget_progress.dart';
 import 'dashboard_stats.dart';
+import 'safe_to_spend.dart';
 
 // ---- Infrastructure singletons -------------------------------------------
 
@@ -56,6 +58,26 @@ final aiReadyProvider = FutureProvider<bool>((ref) {
   return ref.watch(settingsServiceProvider).isAiReady();
 });
 
+final coachServiceProvider = Provider<CoachService>((ref) {
+  return CoachService(
+    ai: ref.watch(aiServiceProvider),
+    settings: ref.watch(settingsServiceProvider),
+    db: ref.watch(databaseProvider),
+  );
+});
+
+/// Coach artifacts for the UI (cached per period inside CoachService).
+final coachBriefingProvider =
+    FutureProvider<String?>((ref) => ref.watch(coachServiceProvider).briefing());
+final insightCardProvider = FutureProvider<String?>(
+    (ref) => ref.watch(coachServiceProvider).dashboardCard());
+final budgetInsightProvider = FutureProvider<String?>(
+    (ref) => ref.watch(coachServiceProvider).budgetInsight());
+final monthProgressProvider = FutureProvider<String?>(
+    (ref) => ref.watch(coachServiceProvider).monthProgressInsight());
+final reportsProvider = FutureProvider<List<AiInsight>>(
+    (ref) => ref.watch(databaseProvider).listReports());
+
 final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
   return TransactionRepository(
     sms: ref.watch(smsServiceProvider),
@@ -64,6 +86,7 @@ final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
     categorizer: ref.watch(categorizerServiceProvider),
     aiCategorizer: ref.watch(aiMerchantCategorizerProvider),
     notifications: ref.watch(notificationServiceProvider),
+    coach: ref.watch(coachServiceProvider),
     db: ref.watch(databaseProvider),
   );
 });
@@ -103,6 +126,13 @@ final reviewQueueProvider = Provider<List<Transaction>>((ref) {
 /// User-set category budgets (reactive).
 final budgetsProvider = StreamProvider<List<Budget>>((ref) {
   return ref.watch(databaseProvider).watchBudgets();
+});
+
+/// The daily "safe to spend" number derived from budgets + this month's spend.
+final safeToSpendProvider = Provider<SafeToSpend>((ref) {
+  final budgets = ref.watch(budgetsProvider).value ?? const [];
+  final txns = ref.watch(allTransactionsProvider).value ?? const [];
+  return SafeToSpend.from(budgets, txns, now: DateTime.now());
 });
 
 /// Each budget paired with this month's spend in that category.
@@ -153,8 +183,19 @@ class PermissionState {
 }
 
 class PermissionController extends Notifier<PermissionState> {
+  bool _autoChecked = false;
+
   @override
-  PermissionState build() => const PermissionState();
+  PermissionState build() {
+    // Auto-request on startup: if permission was already granted, Android
+    // returns immediately with NO dialog, so returning users skip the
+    // permission screen entirely. First-run users see the system prompt.
+    if (!_autoChecked) {
+      _autoChecked = true;
+      Future.microtask(requestAndSync);
+    }
+    return const PermissionState();
+  }
 
   /// Requests SMS permission, then does the initial inbox scan + live listen.
   Future<void> requestAndSync() async {

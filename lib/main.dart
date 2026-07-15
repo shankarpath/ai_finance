@@ -6,6 +6,7 @@ import 'screens/home_shell.dart';
 import 'screens/lock_screen.dart';
 import 'screens/permission_screen.dart';
 import 'services/notification_service.dart';
+import 'theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,14 +27,13 @@ class AiFinanceApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF4C6EF5),
-      brightness: Brightness.light,
-    );
     return MaterialApp(
-      title: 'AI Finance Assistant',
+      title: 'FinCoach',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(colorScheme: scheme, useMaterial3: true),
+      // Dark-first: dark is the brand look, light derives from the same tokens.
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: ThemeMode.dark,
       // Biometric lock wraps everything; inside it, the SMS-permission gate.
       home: const AppLockGate(child: _PermissionGate()),
     );

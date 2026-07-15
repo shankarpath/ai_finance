@@ -1697,6 +1697,655 @@ class AlertLogsCompanion extends UpdateCompanion<AlertLog> {
   }
 }
 
+class $AiInsightsTable extends AiInsights
+    with TableInfo<$AiInsightsTable, AiInsight> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AiInsightsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _periodKeyMeta = const VerificationMeta(
+    'periodKey',
+  );
+  @override
+  late final GeneratedColumn<String> periodKey = GeneratedColumn<String>(
+    'period_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _contentMeta = const VerificationMeta(
+    'content',
+  );
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+    'content',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [kind, periodKey, content, createdAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'ai_insights';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AiInsight> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('period_key')) {
+      context.handle(
+        _periodKeyMeta,
+        periodKey.isAcceptableOrUnknown(data['period_key']!, _periodKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_periodKeyMeta);
+    }
+    if (data.containsKey('content')) {
+      context.handle(
+        _contentMeta,
+        content.isAcceptableOrUnknown(data['content']!, _contentMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_contentMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {kind, periodKey};
+  @override
+  AiInsight map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AiInsight(
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      periodKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}period_key'],
+      )!,
+      content: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}content'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $AiInsightsTable createAlias(String alias) {
+    return $AiInsightsTable(attachedDatabase, alias);
+  }
+}
+
+class AiInsight extends DataClass implements Insertable<AiInsight> {
+  /// 'briefing' | 'daily' | 'weekly' | 'monthly' | 'card'
+  final String kind;
+
+  /// e.g. '2026-07-09' (daily kinds), '2026-W28' (weekly), '2026-07' (monthly).
+  final String periodKey;
+
+  /// Markdown content.
+  final String content;
+  final DateTime createdAt;
+  const AiInsight({
+    required this.kind,
+    required this.periodKey,
+    required this.content,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['kind'] = Variable<String>(kind);
+    map['period_key'] = Variable<String>(periodKey);
+    map['content'] = Variable<String>(content);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  AiInsightsCompanion toCompanion(bool nullToAbsent) {
+    return AiInsightsCompanion(
+      kind: Value(kind),
+      periodKey: Value(periodKey),
+      content: Value(content),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory AiInsight.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AiInsight(
+      kind: serializer.fromJson<String>(json['kind']),
+      periodKey: serializer.fromJson<String>(json['periodKey']),
+      content: serializer.fromJson<String>(json['content']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'kind': serializer.toJson<String>(kind),
+      'periodKey': serializer.toJson<String>(periodKey),
+      'content': serializer.toJson<String>(content),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  AiInsight copyWith({
+    String? kind,
+    String? periodKey,
+    String? content,
+    DateTime? createdAt,
+  }) => AiInsight(
+    kind: kind ?? this.kind,
+    periodKey: periodKey ?? this.periodKey,
+    content: content ?? this.content,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  AiInsight copyWithCompanion(AiInsightsCompanion data) {
+    return AiInsight(
+      kind: data.kind.present ? data.kind.value : this.kind,
+      periodKey: data.periodKey.present ? data.periodKey.value : this.periodKey,
+      content: data.content.present ? data.content.value : this.content,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AiInsight(')
+          ..write('kind: $kind, ')
+          ..write('periodKey: $periodKey, ')
+          ..write('content: $content, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(kind, periodKey, content, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AiInsight &&
+          other.kind == this.kind &&
+          other.periodKey == this.periodKey &&
+          other.content == this.content &&
+          other.createdAt == this.createdAt);
+}
+
+class AiInsightsCompanion extends UpdateCompanion<AiInsight> {
+  final Value<String> kind;
+  final Value<String> periodKey;
+  final Value<String> content;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const AiInsightsCompanion({
+    this.kind = const Value.absent(),
+    this.periodKey = const Value.absent(),
+    this.content = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AiInsightsCompanion.insert({
+    required String kind,
+    required String periodKey,
+    required String content,
+    required DateTime createdAt,
+    this.rowid = const Value.absent(),
+  }) : kind = Value(kind),
+       periodKey = Value(periodKey),
+       content = Value(content),
+       createdAt = Value(createdAt);
+  static Insertable<AiInsight> custom({
+    Expression<String>? kind,
+    Expression<String>? periodKey,
+    Expression<String>? content,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (kind != null) 'kind': kind,
+      if (periodKey != null) 'period_key': periodKey,
+      if (content != null) 'content': content,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AiInsightsCompanion copyWith({
+    Value<String>? kind,
+    Value<String>? periodKey,
+    Value<String>? content,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return AiInsightsCompanion(
+      kind: kind ?? this.kind,
+      periodKey: periodKey ?? this.periodKey,
+      content: content ?? this.content,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (periodKey.present) {
+      map['period_key'] = Variable<String>(periodKey.value);
+    }
+    if (content.present) {
+      map['content'] = Variable<String>(content.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AiInsightsCompanion(')
+          ..write('kind: $kind, ')
+          ..write('periodKey: $periodKey, ')
+          ..write('content: $content, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MerchantCategoryCacheTable extends MerchantCategoryCache
+    with TableInfo<$MerchantCategoryCacheTable, MerchantCategoryCacheData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MerchantCategoryCacheTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _canonicalMeta = const VerificationMeta(
+    'canonical',
+  );
+  @override
+  late final GeneratedColumn<String> canonical = GeneratedColumn<String>(
+    'canonical',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _categoryMeta = const VerificationMeta(
+    'category',
+  );
+  @override
+  late final GeneratedColumn<String> category = GeneratedColumn<String>(
+    'category',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _confidenceMeta = const VerificationMeta(
+    'confidence',
+  );
+  @override
+  late final GeneratedColumn<int> confidence = GeneratedColumn<int>(
+    'confidence',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _askedAtMeta = const VerificationMeta(
+    'askedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> askedAt = GeneratedColumn<DateTime>(
+    'asked_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    canonical,
+    category,
+    confidence,
+    askedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'merchant_category_cache';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MerchantCategoryCacheData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('canonical')) {
+      context.handle(
+        _canonicalMeta,
+        canonical.isAcceptableOrUnknown(data['canonical']!, _canonicalMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_canonicalMeta);
+    }
+    if (data.containsKey('category')) {
+      context.handle(
+        _categoryMeta,
+        category.isAcceptableOrUnknown(data['category']!, _categoryMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_categoryMeta);
+    }
+    if (data.containsKey('confidence')) {
+      context.handle(
+        _confidenceMeta,
+        confidence.isAcceptableOrUnknown(data['confidence']!, _confidenceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_confidenceMeta);
+    }
+    if (data.containsKey('asked_at')) {
+      context.handle(
+        _askedAtMeta,
+        askedAt.isAcceptableOrUnknown(data['asked_at']!, _askedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_askedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {canonical};
+  @override
+  MerchantCategoryCacheData map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MerchantCategoryCacheData(
+      canonical: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}canonical'],
+      )!,
+      category: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}category'],
+      )!,
+      confidence: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}confidence'],
+      )!,
+      askedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}asked_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MerchantCategoryCacheTable createAlias(String alias) {
+    return $MerchantCategoryCacheTable(attachedDatabase, alias);
+  }
+}
+
+class MerchantCategoryCacheData extends DataClass
+    implements Insertable<MerchantCategoryCacheData> {
+  final String canonical;
+  final String category;
+
+  /// The AI's own confidence (0–100) in this label.
+  final int confidence;
+  final DateTime askedAt;
+  const MerchantCategoryCacheData({
+    required this.canonical,
+    required this.category,
+    required this.confidence,
+    required this.askedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['canonical'] = Variable<String>(canonical);
+    map['category'] = Variable<String>(category);
+    map['confidence'] = Variable<int>(confidence);
+    map['asked_at'] = Variable<DateTime>(askedAt);
+    return map;
+  }
+
+  MerchantCategoryCacheCompanion toCompanion(bool nullToAbsent) {
+    return MerchantCategoryCacheCompanion(
+      canonical: Value(canonical),
+      category: Value(category),
+      confidence: Value(confidence),
+      askedAt: Value(askedAt),
+    );
+  }
+
+  factory MerchantCategoryCacheData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MerchantCategoryCacheData(
+      canonical: serializer.fromJson<String>(json['canonical']),
+      category: serializer.fromJson<String>(json['category']),
+      confidence: serializer.fromJson<int>(json['confidence']),
+      askedAt: serializer.fromJson<DateTime>(json['askedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'canonical': serializer.toJson<String>(canonical),
+      'category': serializer.toJson<String>(category),
+      'confidence': serializer.toJson<int>(confidence),
+      'askedAt': serializer.toJson<DateTime>(askedAt),
+    };
+  }
+
+  MerchantCategoryCacheData copyWith({
+    String? canonical,
+    String? category,
+    int? confidence,
+    DateTime? askedAt,
+  }) => MerchantCategoryCacheData(
+    canonical: canonical ?? this.canonical,
+    category: category ?? this.category,
+    confidence: confidence ?? this.confidence,
+    askedAt: askedAt ?? this.askedAt,
+  );
+  MerchantCategoryCacheData copyWithCompanion(
+    MerchantCategoryCacheCompanion data,
+  ) {
+    return MerchantCategoryCacheData(
+      canonical: data.canonical.present ? data.canonical.value : this.canonical,
+      category: data.category.present ? data.category.value : this.category,
+      confidence: data.confidence.present
+          ? data.confidence.value
+          : this.confidence,
+      askedAt: data.askedAt.present ? data.askedAt.value : this.askedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MerchantCategoryCacheData(')
+          ..write('canonical: $canonical, ')
+          ..write('category: $category, ')
+          ..write('confidence: $confidence, ')
+          ..write('askedAt: $askedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(canonical, category, confidence, askedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MerchantCategoryCacheData &&
+          other.canonical == this.canonical &&
+          other.category == this.category &&
+          other.confidence == this.confidence &&
+          other.askedAt == this.askedAt);
+}
+
+class MerchantCategoryCacheCompanion
+    extends UpdateCompanion<MerchantCategoryCacheData> {
+  final Value<String> canonical;
+  final Value<String> category;
+  final Value<int> confidence;
+  final Value<DateTime> askedAt;
+  final Value<int> rowid;
+  const MerchantCategoryCacheCompanion({
+    this.canonical = const Value.absent(),
+    this.category = const Value.absent(),
+    this.confidence = const Value.absent(),
+    this.askedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MerchantCategoryCacheCompanion.insert({
+    required String canonical,
+    required String category,
+    required int confidence,
+    required DateTime askedAt,
+    this.rowid = const Value.absent(),
+  }) : canonical = Value(canonical),
+       category = Value(category),
+       confidence = Value(confidence),
+       askedAt = Value(askedAt);
+  static Insertable<MerchantCategoryCacheData> custom({
+    Expression<String>? canonical,
+    Expression<String>? category,
+    Expression<int>? confidence,
+    Expression<DateTime>? askedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (canonical != null) 'canonical': canonical,
+      if (category != null) 'category': category,
+      if (confidence != null) 'confidence': confidence,
+      if (askedAt != null) 'asked_at': askedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MerchantCategoryCacheCompanion copyWith({
+    Value<String>? canonical,
+    Value<String>? category,
+    Value<int>? confidence,
+    Value<DateTime>? askedAt,
+    Value<int>? rowid,
+  }) {
+    return MerchantCategoryCacheCompanion(
+      canonical: canonical ?? this.canonical,
+      category: category ?? this.category,
+      confidence: confidence ?? this.confidence,
+      askedAt: askedAt ?? this.askedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (canonical.present) {
+      map['canonical'] = Variable<String>(canonical.value);
+    }
+    if (category.present) {
+      map['category'] = Variable<String>(category.value);
+    }
+    if (confidence.present) {
+      map['confidence'] = Variable<int>(confidence.value);
+    }
+    if (askedAt.present) {
+      map['asked_at'] = Variable<DateTime>(askedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MerchantCategoryCacheCompanion(')
+          ..write('canonical: $canonical, ')
+          ..write('category: $category, ')
+          ..write('confidence: $confidence, ')
+          ..write('askedAt: $askedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -1706,6 +2355,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final $BudgetsTable budgets = $BudgetsTable(this);
   late final $AlertLogsTable alertLogs = $AlertLogsTable(this);
+  late final $AiInsightsTable aiInsights = $AiInsightsTable(this);
+  late final $MerchantCategoryCacheTable merchantCategoryCache =
+      $MerchantCategoryCacheTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1715,6 +2367,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     merchantMemories,
     budgets,
     alertLogs,
+    aiInsights,
+    merchantCategoryCache,
   ];
 }
 
@@ -2590,6 +3244,386 @@ typedef $$AlertLogsTableProcessedTableManager =
       AlertLog,
       PrefetchHooks Function()
     >;
+typedef $$AiInsightsTableCreateCompanionBuilder =
+    AiInsightsCompanion Function({
+      required String kind,
+      required String periodKey,
+      required String content,
+      required DateTime createdAt,
+      Value<int> rowid,
+    });
+typedef $$AiInsightsTableUpdateCompanionBuilder =
+    AiInsightsCompanion Function({
+      Value<String> kind,
+      Value<String> periodKey,
+      Value<String> content,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+class $$AiInsightsTableFilterComposer
+    extends Composer<_$AppDatabase, $AiInsightsTable> {
+  $$AiInsightsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get periodKey => $composableBuilder(
+    column: $table.periodKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AiInsightsTableOrderingComposer
+    extends Composer<_$AppDatabase, $AiInsightsTable> {
+  $$AiInsightsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get periodKey => $composableBuilder(
+    column: $table.periodKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AiInsightsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $AiInsightsTable> {
+  $$AiInsightsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<String> get periodKey =>
+      $composableBuilder(column: $table.periodKey, builder: (column) => column);
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$AiInsightsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $AiInsightsTable,
+          AiInsight,
+          $$AiInsightsTableFilterComposer,
+          $$AiInsightsTableOrderingComposer,
+          $$AiInsightsTableAnnotationComposer,
+          $$AiInsightsTableCreateCompanionBuilder,
+          $$AiInsightsTableUpdateCompanionBuilder,
+          (
+            AiInsight,
+            BaseReferences<_$AppDatabase, $AiInsightsTable, AiInsight>,
+          ),
+          AiInsight,
+          PrefetchHooks Function()
+        > {
+  $$AiInsightsTableTableManager(_$AppDatabase db, $AiInsightsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AiInsightsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AiInsightsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$AiInsightsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> kind = const Value.absent(),
+                Value<String> periodKey = const Value.absent(),
+                Value<String> content = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => AiInsightsCompanion(
+                kind: kind,
+                periodKey: periodKey,
+                content: content,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String kind,
+                required String periodKey,
+                required String content,
+                required DateTime createdAt,
+                Value<int> rowid = const Value.absent(),
+              }) => AiInsightsCompanion.insert(
+                kind: kind,
+                periodKey: periodKey,
+                content: content,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AiInsightsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $AiInsightsTable,
+      AiInsight,
+      $$AiInsightsTableFilterComposer,
+      $$AiInsightsTableOrderingComposer,
+      $$AiInsightsTableAnnotationComposer,
+      $$AiInsightsTableCreateCompanionBuilder,
+      $$AiInsightsTableUpdateCompanionBuilder,
+      (AiInsight, BaseReferences<_$AppDatabase, $AiInsightsTable, AiInsight>),
+      AiInsight,
+      PrefetchHooks Function()
+    >;
+typedef $$MerchantCategoryCacheTableCreateCompanionBuilder =
+    MerchantCategoryCacheCompanion Function({
+      required String canonical,
+      required String category,
+      required int confidence,
+      required DateTime askedAt,
+      Value<int> rowid,
+    });
+typedef $$MerchantCategoryCacheTableUpdateCompanionBuilder =
+    MerchantCategoryCacheCompanion Function({
+      Value<String> canonical,
+      Value<String> category,
+      Value<int> confidence,
+      Value<DateTime> askedAt,
+      Value<int> rowid,
+    });
+
+class $$MerchantCategoryCacheTableFilterComposer
+    extends Composer<_$AppDatabase, $MerchantCategoryCacheTable> {
+  $$MerchantCategoryCacheTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get canonical => $composableBuilder(
+    column: $table.canonical,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get category => $composableBuilder(
+    column: $table.category,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get askedAt => $composableBuilder(
+    column: $table.askedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MerchantCategoryCacheTableOrderingComposer
+    extends Composer<_$AppDatabase, $MerchantCategoryCacheTable> {
+  $$MerchantCategoryCacheTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get canonical => $composableBuilder(
+    column: $table.canonical,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get category => $composableBuilder(
+    column: $table.category,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get askedAt => $composableBuilder(
+    column: $table.askedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MerchantCategoryCacheTableAnnotationComposer
+    extends Composer<_$AppDatabase, $MerchantCategoryCacheTable> {
+  $$MerchantCategoryCacheTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get canonical =>
+      $composableBuilder(column: $table.canonical, builder: (column) => column);
+
+  GeneratedColumn<String> get category =>
+      $composableBuilder(column: $table.category, builder: (column) => column);
+
+  GeneratedColumn<int> get confidence => $composableBuilder(
+    column: $table.confidence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get askedAt =>
+      $composableBuilder(column: $table.askedAt, builder: (column) => column);
+}
+
+class $$MerchantCategoryCacheTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $MerchantCategoryCacheTable,
+          MerchantCategoryCacheData,
+          $$MerchantCategoryCacheTableFilterComposer,
+          $$MerchantCategoryCacheTableOrderingComposer,
+          $$MerchantCategoryCacheTableAnnotationComposer,
+          $$MerchantCategoryCacheTableCreateCompanionBuilder,
+          $$MerchantCategoryCacheTableUpdateCompanionBuilder,
+          (
+            MerchantCategoryCacheData,
+            BaseReferences<
+              _$AppDatabase,
+              $MerchantCategoryCacheTable,
+              MerchantCategoryCacheData
+            >,
+          ),
+          MerchantCategoryCacheData,
+          PrefetchHooks Function()
+        > {
+  $$MerchantCategoryCacheTableTableManager(
+    _$AppDatabase db,
+    $MerchantCategoryCacheTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MerchantCategoryCacheTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$MerchantCategoryCacheTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MerchantCategoryCacheTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> canonical = const Value.absent(),
+                Value<String> category = const Value.absent(),
+                Value<int> confidence = const Value.absent(),
+                Value<DateTime> askedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MerchantCategoryCacheCompanion(
+                canonical: canonical,
+                category: category,
+                confidence: confidence,
+                askedAt: askedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String canonical,
+                required String category,
+                required int confidence,
+                required DateTime askedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MerchantCategoryCacheCompanion.insert(
+                canonical: canonical,
+                category: category,
+                confidence: confidence,
+                askedAt: askedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MerchantCategoryCacheTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $MerchantCategoryCacheTable,
+      MerchantCategoryCacheData,
+      $$MerchantCategoryCacheTableFilterComposer,
+      $$MerchantCategoryCacheTableOrderingComposer,
+      $$MerchantCategoryCacheTableAnnotationComposer,
+      $$MerchantCategoryCacheTableCreateCompanionBuilder,
+      $$MerchantCategoryCacheTableUpdateCompanionBuilder,
+      (
+        MerchantCategoryCacheData,
+        BaseReferences<
+          _$AppDatabase,
+          $MerchantCategoryCacheTable,
+          MerchantCategoryCacheData
+        >,
+      ),
+      MerchantCategoryCacheData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -2602,4 +3636,8 @@ class $AppDatabaseManager {
       $$BudgetsTableTableManager(_db, _db.budgets);
   $$AlertLogsTableTableManager get alertLogs =>
       $$AlertLogsTableTableManager(_db, _db.alertLogs);
+  $$AiInsightsTableTableManager get aiInsights =>
+      $$AiInsightsTableTableManager(_db, _db.aiInsights);
+  $$MerchantCategoryCacheTableTableManager get merchantCategoryCache =>
+      $$MerchantCategoryCacheTableTableManager(_db, _db.merchantCategoryCache);
 }

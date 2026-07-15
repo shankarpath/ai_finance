@@ -28,15 +28,24 @@ class ParserService {
   );
 
   // Messages we should never treat as transactions: OTPs, promos, and — crucially —
-  // payment *reminders* (EMI/bill dues) which come from real bank senders but
-  // describe money that has NOT moved yet.
+  // payment *reminders* (EMI / credit-card bill / loan dues) which come from real
+  // bank senders but describe money that has NOT moved yet. A credit-card bill
+  // reminder contains the word "credit", so without this it would be miscounted
+  // as income.
   static final _nonTransaction = RegExp(
     r'(\botp\b|one\s*time\s*password|will\s*expire|do\s*not\s*share|'
     r'requested|request\s*for|e-?mandate|reward\s*points?|\boffer\b|cashback\s*of|'
     // NOTE: don't blanket-filter "emi" — a real "EMI ... deducted" is a
-    // transaction. Reminders are still caught by the phrases below.
+    // transaction. Reminders are still caught by the "due"/"pay" phrases below.
     r'ignore\s+if\s+(?:already\s+)?paid|\breminder\b|'
     r'will\s+be\s+(?:debited|deducted|auto)|'
+    // --- Payment / bill / EMI due reminders ---
+    r'\b(?:amount|amt|min(?:imum)?|total|tot|outstanding|payment)\s+due\b|'
+    r'\bdue\s+(?:date|on|by|amount|amt)\b|'
+    r'\bpay\s+(?:now|before|immediately|your)\b|'
+    r'\b(?:please|kindly)\s+(?:pay|clear)\b|'
+    r'avoid\s+(?:late|penalty|overdue)|'
+    r'statement\s+(?:has\s+been\s+)?(?:generated|is\s+ready)|'
     r'\bpay\b[^.]{0,40}\bby\s+\d)',
     caseSensitive: false,
   );
@@ -173,16 +182,24 @@ class ParserService {
     return _financialSenderTokens.any(s.contains);
   }
 
+  // "credit card", "credit limit", "credit line" are card nouns — not incoming
+  // money. Neutralise them so only a standalone "credit(ed)" signals income.
+  static final _creditNoun = RegExp(
+    r'credit\s*(?:card|limit|line|cards)',
+    caseSensitive: false,
+  );
+
   String? _detectType(String text) {
-    final isDebit = _debitWords.hasMatch(text);
-    final isCredit = _creditWords.hasMatch(text);
+    final cleaned = text.replaceAll(_creditNoun, ' ');
+    final isDebit = _debitWords.hasMatch(cleaned);
+    final isCredit = _creditWords.hasMatch(cleaned);
     if (isDebit && !isCredit) return 'debit';
     if (isCredit && !isDebit) return 'credit';
     if (isDebit && isCredit) {
       // Both appear (e.g. "debited ... credited to beneficiary"). Fall back to
       // whichever keyword comes first in the message.
-      final d = _debitWords.firstMatch(text)!.start;
-      final c = _creditWords.firstMatch(text)!.start;
+      final d = _debitWords.firstMatch(cleaned)!.start;
+      final c = _creditWords.firstMatch(cleaned)!.start;
       return d <= c ? 'debit' : 'credit';
     }
     return null;
