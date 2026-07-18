@@ -8,6 +8,7 @@ import '../providers/budget_progress.dart';
 import '../theme/app_theme.dart';
 import '../utils/formatters.dart';
 import '../widgets/coach_widgets.dart';
+import 'plan_screen.dart';
 
 class BudgetScreen extends ConsumerWidget {
   const BudgetScreen({super.key});
@@ -21,9 +22,11 @@ class BudgetScreen extends ConsumerWidget {
         title: const Text('Budgets'),
         actions: [
           IconButton(
-            tooltip: 'Let the coach suggest budgets',
+            tooltip: 'Build a plan with AI',
             icon: const Icon(Icons.auto_awesome),
-            onPressed: () => _suggestWithAi(context, ref),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PlanScreen()),
+            ),
           ),
         ],
       ),
@@ -48,66 +51,6 @@ class BudgetScreen extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  /// Asks the coach to propose limits from ~3 months of history, previews
-  /// them, and applies on confirm.
-  Future<void> _suggestWithAi(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-        const SnackBar(content: Text('Coach is studying your history…')));
-    final suggestions = await ref.read(coachServiceProvider).suggestBudgets();
-    if (!context.mounted) return;
-    if (suggestions.isEmpty) {
-      messenger.showSnackBar(const SnackBar(
-          content: Text(
-              'No suggestions — check your Gemini key in Settings, or add '
-              'more transaction history.')));
-      return;
-    }
-
-    final apply = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Coach\'s suggested budgets'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              for (final e in suggestions.entries)
-                ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: Icon(AppCategory.iconFor(e.key),
-                      color: AppCategory.colorFor(e.key), size: 20),
-                  title: Text(e.key),
-                  trailing: Text(formatRupees(e.value),
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
-                ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Apply all')),
-        ],
-      ),
-    );
-
-    if (apply == true) {
-      final db = ref.read(databaseProvider);
-      for (final e in suggestions.entries) {
-        await db.setBudget(e.key, e.value);
-      }
-      messenger.showSnackBar(SnackBar(
-          content:
-              Text('${suggestions.length} budgets set — safe-to-spend is live.')));
-    }
   }
 
   Future<void> _editBudget(
@@ -350,6 +293,16 @@ class _EmptyState extends StatelessWidget {
           const Text(
             'Set a monthly limit per category to track your spending.',
             textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          Builder(
+            builder: (context) => FilledButton.tonalIcon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const PlanScreen()),
+              ),
+              icon: const Icon(Icons.auto_awesome, size: 18),
+              label: const Text('Build a plan with AI'),
+            ),
           ),
         ],
       ),

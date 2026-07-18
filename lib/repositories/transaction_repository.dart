@@ -3,13 +3,16 @@ import 'package:flutter/foundation.dart' show compute;
 
 import '../models/parsed_sms.dart';
 import '../services/ai_merchant_categorizer.dart';
+import '../services/ai_sms_parser.dart';
 import '../services/categorizer_service.dart';
 import '../services/coach_service.dart';
 import '../services/database_service.dart';
 import '../services/duplicate_detector.dart';
 import '../services/merchant_normalizer.dart';
+import '../services/notification_capture_service.dart';
 import '../services/notification_service.dart';
 import '../services/parser_service.dart';
+import '../services/settings_service.dart';
 import '../services/sms_service.dart';
 import '../services/subscription_detector.dart';
 import '../utils/formatters.dart';
@@ -23,10 +26,15 @@ class TransactionRepository {
   final MerchantNormalizer _normalizer;
   final CategorizerService _categorizer;
   final AiMerchantCategorizer _aiCategorizer;
+  final AiSmsParser _aiSmsParser;
   final NotificationService _notifications;
   final CoachService _coach;
+  final SettingsService _settings;
   final AppDatabase _db;
   final DuplicateDetector _dupes;
+
+  /// Second ingestion source: payment-app notifications (nullable for tests).
+  final NotificationCaptureService? _notifCapture;
 
   /// Debits at or above this (₹) trigger a large-transaction notification.
   static const _largeTxnThreshold = 3000.0;
@@ -41,49 +49,139 @@ class TransactionRepository {
     required MerchantNormalizer normalizer,
     required CategorizerService categorizer,
     required AiMerchantCategorizer aiCategorizer,
+    required AiSmsParser aiSmsParser,
     required NotificationService notifications,
     required CoachService coach,
+    required SettingsService settings,
     required AppDatabase db,
     DuplicateDetector dupes = const DuplicateDetector(),
+    NotificationCaptureService? notifCapture,
   })  : _sms = sms,
         _parser = parser,
         _normalizer = normalizer,
         _categorizer = categorizer,
         _aiCategorizer = aiCategorizer,
+        _aiSmsParser = aiSmsParser,
         _notifications = notifications,
         _coach = coach,
+        _settings = settings,
         _db = db,
-        _dupes = dupes;
+        _dupes = dupes,
+        _notifCapture = notifCapture;
 
   Stream<List<Transaction>> watchAll() => _db.watchAll();
 
   Stream<List<Transaction>> watchBetween(DateTime start, DateTime end) =>
       _db.watchBetween(start, end);
 
-  /// Scans the inbox, imports new transactions, then enriches them.
-  /// Returns the number of new transactions written.
+  /// Scans the inbox, imports new transactions, captures the ones the parser
+  /// couldn't read into the never-drop queue, then enriches. Returns the number
+  /// of new transactions written.
   Future<int> syncInbox() async {
     final inbox = await _sms.readInbox();
     final memory = await _db.merchantMemoryMap();
+    final aliases = await _db.merchantAliasMap();
     // Parsing thousands of SMS is regex-heavy — run it off the UI thread so
     // the app stays responsive during a full inbox scan.
-    final parsedBatch =
-        await compute(parseInboxBatch, ParseBatchInput(inbox, memory));
+    final scan =
+        await compute(scanInboxBatch, ParseBatchInput(inbox, memory, aliases));
+
     final entries = <(ParsedSms, TransactionsCompanion)>[
-      for (final e in parsedBatch) (e.parsed, _toCompanion(e.parsed, e.canonical, e.result)),
+      for (final e in scan.parsed)
+        (e.parsed, _toCompanion(e.parsed, e.canonical, e.result)),
     ];
 
     var imported = 0;
-    if (entries.isNotEmpty) {
-      await _db.transaction(() async {
-        for (final (parsed, companion) in entries) {
-          if (await _isCrossProviderDuplicate(parsed)) continue;
-          if (await _db.insertIfNew(companion)) imported++;
-        }
-      });
-    }
+    await _db.transaction(() async {
+      for (final (parsed, companion) in entries) {
+        if (await _isCrossProviderDuplicate(parsed)) continue;
+        if (await _db.insertIfNew(companion)) imported++;
+        // If this SMS was previously stuck in the review queue, it's handled now.
+        await _db.clearUnparsedBySmsId(parsed.smsId);
+      }
+      // Never drop: record every financial-sender message we couldn't parse.
+      for (final u in scan.unparsed) {
+        await _db.insertUnparsedIfNew(UnparsedMessagesCompanion.insert(
+          smsId: u.smsId,
+          body: u.body,
+          sender: Value(u.sender),
+          receivedAt: u.receivedAt,
+          reason: u.reason,
+          createdAt: DateTime.now(),
+        ));
+      }
+    });
+
+    await _settings.setLastScan(ScanSummary(
+      scanned: scan.scanned,
+      parsed: scan.parsed.length,
+      ignored: scan.ignored,
+      needsAttention: scan.unparsed.length,
+      at: DateTime.now(),
+    ));
+
+    imported += await ingestNotifications();
 
     await enrich();
+    return imported;
+  }
+
+  /// Drains captured payment-app notifications (the second ingestion source —
+  /// catches transactions that never produce an SMS, e.g. RuPay-CC-on-UPI) and
+  /// runs them through the same classify → dedup → never-drop pipeline.
+  /// Returns the number of new transactions written.
+  Future<int> ingestNotifications() async {
+    final capture = _notifCapture;
+    if (capture == null) return 0;
+    final pending = await capture.drain();
+    if (pending.isEmpty) return 0;
+
+    final memory = await _db.merchantMemoryMap();
+    final aliases = await _db.merchantAliasMap();
+    var imported = 0;
+
+    for (final n in pending) {
+      // Known payment apps map to trusted sender tokens; unknown apps fall to
+      // 'APP' (untrusted) so their transaction-shaped notifications queue for
+      // review instead of auto-logging.
+      final sender = senderTokenForPackage(n.package) ?? 'APP';
+      final result = _parser.classify(
+        body: n.body,
+        receivedAt: n.postedAt,
+        sender: sender,
+        providerId: 'ntf_${n.key.hashCode & 0x7fffffff}',
+      );
+
+      if (result.isParsed) {
+        final parsed = result.parsed!;
+        if (await _isCrossProviderDuplicate(parsed)) continue;
+        // Loose guard: the same payment usually also arrives as a bank SMS
+        // (which carries account/ref). Any same-amount, same-direction posted
+        // row within ±5 minutes means this notification is an echo.
+        final nearby = await _db.findNearby(
+          date: parsed.date,
+          amount: parsed.amount,
+          transactionType: parsed.transactionType,
+          window: const Duration(minutes: 5),
+        );
+        if (nearby.isNotEmpty) continue;
+
+        final canonical = _normalizer.normalize(parsed.merchant ?? 'Unknown',
+            aliases: aliases);
+        final companion = _toCompanion(parsed, canonical,
+            _categorizer.categorize(parsed, canonical, memory: memory));
+        if (await _db.insertIfNew(companion)) imported++;
+      } else if (result.needsAttention) {
+        await _db.insertUnparsedIfNew(UnparsedMessagesCompanion.insert(
+          smsId: 'ntf_${n.key.hashCode & 0x7fffffff}',
+          body: n.body,
+          sender: Value('app: ${n.package}'),
+          receivedAt: n.postedAt,
+          reason: result.status.name,
+          createdAt: DateTime.now(),
+        ));
+      }
+    }
     return imported;
   }
 
@@ -100,7 +198,19 @@ class TransactionRepository {
         window: DuplicateDetector.window,
       ),
     ];
-    return _dupes.isDuplicate(parsed, candidates);
+    if (_dupes.isDuplicate(parsed, candidates)) return true;
+
+    // Loose rule for notification-sourced rows: those carry no account/ref to
+    // corroborate strictly, so a same-amount same-direction row within ±5 min
+    // whose id marks it as notification-captured is the same payment.
+    final nearby = await _db.findNearby(
+      date: parsed.date,
+      amount: parsed.amount,
+      transactionType: parsed.transactionType,
+      window: const Duration(minutes: 5),
+    );
+    return nearby
+        .any((t) => t.smsId.contains('ntf_') && t.smsId != parsed.smsId);
   }
 
   /// Post-import enrichment: mark subscriptions, AI-label unknowns, check budget
@@ -108,6 +218,8 @@ class TransactionRepository {
   Future<void> enrich() async {
     await _detectSubscriptions();
     await _aiCategorizer.categorizeAll();
+    // Opt-in: let AI read the SMS the regex couldn't (no-op without consent).
+    await _aiSmsParser.parseUnparsed();
     await _checkBudgetAlerts();
     await _scheduleDailySummary();
     await _refreshCoachContent();
@@ -217,6 +329,7 @@ class TransactionRepository {
   Future<void> reprocessAll() async {
     final txns = await _db.allTransactions();
     final memory = await _db.merchantMemoryMap();
+    final aliases = await _db.merchantAliasMap();
     await _db.transaction(() async {
       for (final t in txns) {
         if (t.categorySource == 'user') continue;
@@ -229,8 +342,8 @@ class TransactionRepository {
           await _db.deleteById(t.id);
           continue;
         }
-        final status = reparsed?.status ?? t.status;
-        final referenceNo = reparsed?.referenceNo ?? t.referenceNo;
+        final status = reparsed.status;
+        final referenceNo = reparsed.referenceNo ?? t.referenceNo;
         final parsed = ParsedSms(
           amount: t.amount,
           transactionType: t.transactionType,
@@ -244,7 +357,11 @@ class TransactionRepository {
           referenceNo: referenceNo,
           status: status,
         );
-        final canonical = _normalizer.normalize(t.merchant);
+        // Prefer the merchant from the *latest* parser logic — extraction
+        // improvements must heal rows stored with a mis-grabbed clause.
+        final canonical = _normalizer.normalize(
+            reparsed.merchant ?? t.merchant,
+            aliases: aliases);
         final ruleResult =
             _categorizer.categorize(parsed, canonical, memory: memory);
         // Don't wipe an earlier AI label just because the offline rules still
@@ -283,9 +400,38 @@ class TransactionRepository {
   void startLiveIngest() {
     _sms.listenIncoming((raw) async {
       final memory = await _db.merchantMemoryMap();
-      final entry = _parseToEntry(raw, memory);
-      if (entry == null) return;
-      final (parsed, companion) = entry;
+      final result = _parser.classify(
+        body: raw.body,
+        receivedAt: raw.receivedAt,
+        sender: raw.sender,
+        providerId: raw.providerId,
+      );
+
+      // Couldn't parse it, but it looks financial — queue it, don't drop it.
+      if (!result.isParsed) {
+        if (result.needsAttention) {
+          await _db.insertUnparsedIfNew(UnparsedMessagesCompanion.insert(
+            smsId: _parser.dedupId(
+                body: raw.body,
+                receivedAt: raw.receivedAt,
+                providerId: raw.providerId),
+            body: raw.body,
+            sender: Value(raw.sender),
+            receivedAt: raw.receivedAt,
+            reason: result.status.name,
+            createdAt: DateTime.now(),
+          ));
+          await enrich();
+        }
+        return;
+      }
+
+      final parsed = result.parsed!;
+      final aliases = await _db.merchantAliasMap();
+      final canonical = _normalizer.normalize(parsed.merchant ?? 'Unknown',
+          aliases: aliases);
+      final companion = _toCompanion(
+          parsed, canonical, _categorizer.categorize(parsed, canonical, memory: memory));
       if (await _isCrossProviderDuplicate(parsed)) return;
       final isNew = await _db.insertIfNew(companion);
       if (!isNew) return;
@@ -375,22 +521,74 @@ class TransactionRepository {
     await _db.confirmTransaction(t.id);
   }
 
-  // ---- Isolate-friendly batch parsing --------------------------------------
+  // ---- Manual entry & review-queue resolution ------------------------------
 
-  (ParsedSms, TransactionsCompanion)? _parseToEntry(
-      RawSms raw, Map<String, String> memory) {
-    final parsed = _parser.parse(
-      body: raw.body,
-      receivedAt: raw.receivedAt,
-      sender: raw.sender,
-      providerId: raw.providerId,
-    );
-    if (parsed == null) return null;
-
-    final canonical = _normalizer.normalize(parsed.merchant ?? 'Unknown');
-    final result = _categorizer.categorize(parsed, canonical, memory: memory);
-    return (parsed, _toCompanion(parsed, canonical, result));
+  /// Adds a transaction the user entered by hand (cash spends, missed SMS, or a
+  /// repaired unparsed message). [smsBody] carries the original SMS when this
+  /// resolves a queue item, otherwise a short note.
+  Future<void> addManualTransaction({
+    required double amount,
+    required String transactionType,
+    required String merchant,
+    required String category,
+    required DateTime date,
+    String smsBody = 'Added manually',
+    String? sourceSmsId,
+  }) async {
+    final aliases = await _db.merchantAliasMap();
+    final canonical = _normalizer.normalize(
+        merchant.isEmpty ? 'Unknown' : merchant,
+        aliases: aliases);
+    // Learn the raw→canonical mapping so the same messy string resolves
+    // automatically next time.
+    if (merchant.isNotEmpty &&
+        merchant.trim().toLowerCase() != canonical.toLowerCase()) {
+      await _db.rememberMerchantAlias(merchant, canonical);
+    }
+    final smsId = sourceSmsId ??
+        'manual_${DateTime.now().microsecondsSinceEpoch}';
+    await _db.insertIfNew(TransactionsCompanion.insert(
+      amount: amount,
+      transactionType: transactionType,
+      date: date,
+      smsBody: smsBody,
+      smsId: smsId,
+      merchant: Value(merchant.isEmpty ? 'Unknown' : merchant),
+      merchantCanonical: Value(canonical),
+      category: Value(category),
+      confidence: const Value(100),
+      categorySource: const Value('user'),
+      status: const Value('posted'),
+      needsReview: const Value(false),
+    ));
+    await enrich();
   }
+
+  /// Turns a queued unparsed message into a transaction (user-supplied fields),
+  /// then marks the queue row resolved.
+  Future<void> resolveUnparsed(
+    UnparsedMessage row, {
+    required double amount,
+    required String transactionType,
+    required String merchant,
+    required String category,
+  }) async {
+    await addManualTransaction(
+      amount: amount,
+      transactionType: transactionType,
+      merchant: merchant,
+      category: category,
+      date: row.receivedAt,
+      smsBody: row.body,
+      sourceSmsId: row.smsId,
+    );
+    await _db.setUnparsedStatus(row.id, 'resolved');
+  }
+
+  /// The user marked a queued message as "not a transaction".
+  Future<void> dismissUnparsed(int id) => _db.setUnparsedStatus(id, 'ignored');
+
+  // ---- Isolate-friendly batch parsing --------------------------------------
 
   TransactionsCompanion _toCompanion(
       ParsedSms p, String canonical, CategoryResult result) {
@@ -417,11 +615,15 @@ class TransactionRepository {
   }
 }
 
-/// Input for [parseInboxBatch] (must be a plain sendable object).
+/// Input for [scanInboxBatch] (must be a plain sendable object).
 class ParseBatchInput {
   final List<RawSms> inbox;
   final Map<String, String> memory;
-  const ParseBatchInput(this.inbox, this.memory);
+
+  /// Learned raw→canonical merchant aliases (lowercased keys).
+  final Map<String, String> aliases;
+  const ParseBatchInput(this.inbox, this.memory,
+      [this.aliases = const {}]);
 }
 
 /// One parsed inbox entry produced off the UI thread.
@@ -432,24 +634,64 @@ class ParsedEntry {
   const ParsedEntry(this.parsed, this.canonical, this.result);
 }
 
-/// Top-level so it can run in a background isolate via [compute]. All three
-/// services are pure Dart with const constructors.
-List<ParsedEntry> parseInboxBatch(ParseBatchInput input) {
+/// A financial-sender message the parser couldn't read (for the review queue).
+class UnparsedRecord {
+  final String smsId;
+  final String body;
+  final String? sender;
+  final DateTime receivedAt;
+  final String reason;
+  const UnparsedRecord(
+      this.smsId, this.body, this.sender, this.receivedAt, this.reason);
+}
+
+/// The full outcome of scanning the inbox off the UI thread: parsed
+/// transactions, unparsed-but-financial messages, and a tally of everything.
+class InboxScan {
+  final List<ParsedEntry> parsed;
+  final List<UnparsedRecord> unparsed;
+  final int scanned;
+  final int ignored;
+  const InboxScan(this.parsed, this.unparsed, this.scanned, this.ignored);
+}
+
+/// Top-level so it can run in a background isolate via [compute]. Classifies
+/// every message so nothing is silently dropped.
+InboxScan scanInboxBatch(ParseBatchInput input) {
   const parser = ParserService();
   const normalizer = MerchantNormalizer();
   const categorizer = CategorizerService();
-  final out = <ParsedEntry>[];
+  final parsed = <ParsedEntry>[];
+  final unparsed = <UnparsedRecord>[];
+  var ignored = 0;
+
   for (final raw in input.inbox) {
-    final parsed = parser.parse(
+    final result = parser.classify(
       body: raw.body,
       receivedAt: raw.receivedAt,
       sender: raw.sender,
       providerId: raw.providerId,
     );
-    if (parsed == null) continue;
-    final canonical = normalizer.normalize(parsed.merchant ?? 'Unknown');
-    out.add(ParsedEntry(parsed, canonical,
-        categorizer.categorize(parsed, canonical, memory: input.memory)));
+    if (result.isParsed) {
+      final p = result.parsed!;
+      final canonical =
+          normalizer.normalize(p.merchant ?? 'Unknown', aliases: input.aliases);
+      parsed.add(ParsedEntry(
+          p, canonical, categorizer.categorize(p, canonical, memory: input.memory)));
+    } else if (result.needsAttention) {
+      unparsed.add(UnparsedRecord(
+        parser.dedupId(
+            body: raw.body,
+            receivedAt: raw.receivedAt,
+            providerId: raw.providerId),
+        raw.body,
+        raw.sender,
+        raw.receivedAt,
+        result.status.name,
+      ));
+    } else {
+      ignored++; // non-financial sender or clearly non-transactional
+    }
   }
-  return out;
+  return InboxScan(parsed, unparsed, input.inbox.length, ignored);
 }

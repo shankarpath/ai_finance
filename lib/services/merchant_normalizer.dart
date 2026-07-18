@@ -60,10 +60,15 @@ class MerchantNormalizer {
   );
 
   /// Returns the canonical display name for [raw]. [raw] is the merchant string
-  /// detected by the parser.
-  String normalize(String raw) {
+  /// detected by the parser. [aliases] is the learned raw→canonical map from
+  /// the database (lowercased keys) and always wins over the static rules, so
+  /// user/AI corrections extend normalization without an app update.
+  String normalize(String raw, {Map<String, String>? aliases}) {
     var s = raw.trim().toLowerCase();
     if (s.isEmpty) return 'Unknown';
+
+    final learned = aliases?[s];
+    if (learned != null && learned.isNotEmpty) return learned;
 
     // Drop the UPI handle domain: "upiswiggy@icici" -> "upiswiggy".
     final at = s.indexOf('@');

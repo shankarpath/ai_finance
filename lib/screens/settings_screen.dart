@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../providers/app_providers.dart';
+import 'diagnostics_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -15,6 +16,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _keyController = TextEditingController();
   bool _obscure = true;
   bool _consent = false;
+  bool _smsParseConsent = false;
   bool _hasSavedKey = false;
   bool _loading = true;
 
@@ -28,10 +30,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final s = ref.read(settingsServiceProvider);
     final key = await s.getApiKey();
     final consent = await s.hasConsent();
+    final smsConsent = await s.hasSmsParseConsent();
     if (!mounted) return;
     setState(() {
       _hasSavedKey = key != null;
       _consent = consent;
+      _smsParseConsent = smsConsent;
       _loading = false;
     });
   }
@@ -66,6 +70,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ref.invalidate(aiReadyProvider);
     if (!mounted) return;
     setState(() => _consent = value);
+  }
+
+  Future<void> _setSmsParseConsent(bool value) async {
+    await ref.read(settingsServiceProvider).setSmsParseConsent(value);
+    if (!mounted) return;
+    setState(() => _smsParseConsent = value);
   }
 
   void _snack(String msg) {
@@ -211,6 +221,68 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
             ),
           ),
+
+          const Divider(height: 32),
+          Text('Message parsing', style: theme.textTheme.titleLarge),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.health_and_safety_outlined),
+            title: const Text('Message health'),
+            subtitle: Consumer(builder: (context, ref, _) {
+              final count =
+                  ref.watch(needsAttentionCountProvider).value ?? 0;
+              return Text(count == 0
+                  ? 'Nothing dropped — every bank message accounted for.'
+                  : '$count message${count == 1 ? '' : 's'} need review.');
+            }),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const DiagnosticsScreen()),
+            ),
+          ),
+          Consumer(builder: (context, ref, _) {
+            final enabled =
+                ref.watch(notifCaptureEnabledProvider).value ?? false;
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(
+                enabled
+                    ? Icons.notifications_active
+                    : Icons.notifications_off_outlined,
+                color: enabled ? Colors.green : null,
+              ),
+              title: const Text('Capture app notifications'),
+              subtitle: Text(enabled
+                  ? 'On — payments from GPay/PhonePe/bank apps are captured '
+                      'even when there is no SMS.'
+                  : 'Off — some payments (e.g. credit card on UPI) never send '
+                      'an SMS. Grant notification access to catch them too.'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () async {
+                await ref.read(notificationCaptureProvider).openSettings();
+                // Refresh the status when the user comes back.
+                ref.invalidate(notifCaptureEnabledProvider);
+              },
+            );
+          }),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('AI-parse messages the app can\'t read'),
+            subtitle: const Text(
+                'Sends the FULL TEXT of bank SMS the parser can\'t handle to '
+                'Gemini to extract them. Stronger than the summary above — '
+                'raw messages leave your device. Off by default.'),
+            value: _smsParseConsent,
+            onChanged: _consent ? _setSmsParseConsent : null,
+          ),
+          if (!_consent)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('Enable cloud AI first to use AI parsing.',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.disabledColor)),
+            ),
 
           const Divider(height: 32),
           Text('Data', style: theme.textTheme.titleLarge),

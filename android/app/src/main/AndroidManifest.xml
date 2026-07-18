@@ -35,6 +35,17 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Captures payment-app notifications (opt-in via system Notification
+             access) so transactions without an SMS are still logged. -->
+        <service
+            android:name=".TxnNotificationListener"
+            android:exported="false"
+            android:label="FinCoach transaction capture"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService"/>
+            </intent-filter>
+        </service>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

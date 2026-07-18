@@ -124,6 +124,57 @@ class MerchantCategoryCache extends Table {
   Set<Column> get primaryKey => {canonical};
 }
 
+/// A thing the user is saving up to buy (bike, TV, AC, …). [estimatedPrice] is
+/// usually AI-estimated; [saved] is how much the user has set aside toward it.
+class PurchaseGoals extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get name => text()();
+  RealColumn get estimatedPrice => real()();
+  RealColumn get saved => real().withDefault(const Constant(0))();
+
+  /// A short AI note about the estimate (model/segment/range), if any.
+  TextColumn get priceNote => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+}
+
+/// A financial-sender SMS the regex parser could not turn into a transaction.
+/// Captured (never dropped) so the user — or opt-in AI parsing — can resolve it.
+class UnparsedMessages extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// Same stable id scheme as transactions, so re-scans don't duplicate.
+  TextColumn get smsId => text().unique()();
+  TextColumn get body => text()();
+  TextColumn get sender => text().nullable()();
+  DateTimeColumn get receivedAt => dateTime()();
+
+  /// 'needs_type' | 'needs_amount' | 'needs_structure'.
+  TextColumn get reason => text()();
+
+  /// 'needs_attention' | 'ignored' (user/AI said not a txn) | 'resolved'.
+  TextColumn get status =>
+      text().withDefault(const Constant('needs_attention'))();
+
+  /// How many times opt-in AI parsing has been attempted (bounds retries).
+  IntColumn get aiAttempts => integer().withDefault(const Constant(0))();
+  DateTimeColumn get createdAt => dateTime()();
+}
+
+/// Learned raw-merchant-string → canonical-name mappings, extending the static
+/// rules in MerchantNormalizer without an app update. Written when a human or
+/// the AI resolves a messy name ("SWGY*123") to a canonical one ("Swiggy").
+class MerchantAliases extends Table {
+  /// The raw string as seen in SMS, lowercased.
+  TextColumn get alias => text()();
+  TextColumn get canonical => text()();
+
+  /// 'user' | 'ai'.
+  TextColumn get source => text().withDefault(const Constant('user'))();
+
+  @override
+  Set<Column> get primaryKey => {alias};
+}
+
 @DriftDatabase(tables: [
   Transactions,
   MerchantMemories,
@@ -131,6 +182,9 @@ class MerchantCategoryCache extends Table {
   AlertLogs,
   AiInsights,
   MerchantCategoryCache,
+  PurchaseGoals,
+  UnparsedMessages,
+  MerchantAliases,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -139,7 +193,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -169,6 +223,15 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 8) {
             await m.createTable(merchantCategoryCache);
+          }
+          if (from < 9) {
+            await m.createTable(purchaseGoals);
+          }
+          if (from < 10) {
+            await m.createTable(unparsedMessages);
+          }
+          if (from < 11) {
+            await m.createTable(merchantAliases);
           }
         },
       );
@@ -227,6 +290,26 @@ class AppDatabase extends _$AppDatabase {
   Future<Map<String, String>> merchantMemoryMap() async {
     final rows = await select(merchantMemories).get();
     return {for (final r in rows) r.canonical: r.category};
+  }
+
+  /// The learned raw-alias → canonical-name map (aliases stored lowercased).
+  Future<Map<String, String>> merchantAliasMap() async {
+    final rows = await select(merchantAliases).get();
+    return {for (final r in rows) r.alias: r.canonical};
+  }
+
+  /// Records that raw string [alias] means merchant [canonical] (upsert).
+  Future<void> rememberMerchantAlias(String alias, String canonical,
+      {String source = 'user'}) async {
+    final a = alias.trim().toLowerCase();
+    if (a.isEmpty || canonical.trim().isEmpty) return;
+    await into(merchantAliases).insertOnConflictUpdate(
+      MerchantAliasesCompanion.insert(
+        alias: a,
+        canonical: canonical.trim(),
+        source: Value(source),
+      ),
+    );
   }
 
   /// Records a user's category choice for a merchant (upsert).
@@ -347,6 +430,107 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<Transaction>> allTransactions() =>
       (select(transactions)..orderBy([(t) => OrderingTerm.desc(t.date)])).get();
+
+  // ---- Purchase goals ------------------------------------------------------
+
+  Stream<List<PurchaseGoal>> watchPurchaseGoals() =>
+      (select(purchaseGoals)..orderBy([(g) => OrderingTerm.desc(g.createdAt)]))
+          .watch();
+
+  Future<int> addPurchaseGoal({
+    required String name,
+    required double estimatedPrice,
+    String? note,
+  }) {
+    return into(purchaseGoals).insert(PurchaseGoalsCompanion.insert(
+      name: name,
+      estimatedPrice: estimatedPrice,
+      priceNote: Value(note),
+      createdAt: DateTime.now(),
+    ));
+  }
+
+  /// Adds [amount] to a goal's saved total (read-modify-write in a txn).
+  Future<void> addToGoalSavings(int id, double amount) async {
+    await transaction(() async {
+      final g = await (select(purchaseGoals)..where((t) => t.id.equals(id)))
+          .getSingleOrNull();
+      if (g == null) return;
+      final next = (g.saved + amount).clamp(0, double.infinity).toDouble();
+      await (update(purchaseGoals)..where((t) => t.id.equals(id)))
+          .write(PurchaseGoalsCompanion(saved: Value(next)));
+    });
+  }
+
+  Future<void> updateGoalPrice(int id, double price, String? note) async {
+    await (update(purchaseGoals)..where((t) => t.id.equals(id))).write(
+      PurchaseGoalsCompanion(
+        estimatedPrice: Value(price),
+        priceNote: Value(note),
+      ),
+    );
+  }
+
+  Future<void> deletePurchaseGoal(int id) async {
+    await (delete(purchaseGoals)..where((t) => t.id.equals(id))).go();
+  }
+
+  // ---- Unparsed messages (never-drop queue) --------------------------------
+
+  /// Messages awaiting review, newest first.
+  Stream<List<UnparsedMessage>> watchNeedsAttention() =>
+      (select(unparsedMessages)
+            ..where((u) => u.status.equals('needs_attention'))
+            ..orderBy([(u) => OrderingTerm.desc(u.receivedAt)]))
+          .watch();
+
+  Stream<int> watchNeedsAttentionCount() {
+    final q = selectOnly(unparsedMessages)
+      ..addColumns([unparsedMessages.id.count()])
+      ..where(unparsedMessages.status.equals('needs_attention'));
+    return q
+        .map((r) => r.read(unparsedMessages.id.count()) ?? 0)
+        .watchSingle();
+  }
+
+  /// Inserts an unparsed message unless one with the same [smsId] already
+  /// exists. Returns true when a new row was written.
+  Future<bool> insertUnparsedIfNew(UnparsedMessagesCompanion entry) async {
+    final rowId = await into(unparsedMessages)
+        .insert(entry, mode: InsertMode.insertOrIgnore);
+    return rowId != 0;
+  }
+
+  /// Needs-attention rows that opt-in AI parsing may still try ([maxAttempts]).
+  Future<List<UnparsedMessage>> unparsedForAi({int maxAttempts = 2, int limit = 10}) =>
+      (select(unparsedMessages)
+            ..where((u) =>
+                u.status.equals('needs_attention') &
+                u.aiAttempts.isSmallerThanValue(maxAttempts))
+            ..orderBy([(u) => OrderingTerm.desc(u.receivedAt)])
+            ..limit(limit))
+          .get();
+
+  Future<void> setUnparsedStatus(int id, String status) async {
+    await (update(unparsedMessages)..where((u) => u.id.equals(id)))
+        .write(UnparsedMessagesCompanion(status: Value(status)));
+  }
+
+  Future<void> bumpUnparsedAiAttempt(int id) async {
+    await transaction(() async {
+      final row = await (select(unparsedMessages)..where((u) => u.id.equals(id)))
+          .getSingleOrNull();
+      if (row == null) return;
+      await (update(unparsedMessages)..where((u) => u.id.equals(id)))
+          .write(UnparsedMessagesCompanion(aiAttempts: Value(row.aiAttempts + 1)));
+    });
+  }
+
+  /// Drops any unparsed row that now corresponds to a stored transaction
+  /// (e.g. a parser improvement finally handled it).
+  Future<void> clearUnparsedBySmsId(String smsId) async {
+    await (delete(unparsedMessages)..where((u) => u.smsId.equals(smsId))).go();
+  }
 
   /// Re-writes the enrichment fields of one row (used by reprocessing).
   Future<void> updateEnrichmentById(

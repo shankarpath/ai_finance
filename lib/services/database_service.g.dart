@@ -2346,6 +2346,1221 @@ class MerchantCategoryCacheCompanion
   }
 }
 
+class $PurchaseGoalsTable extends PurchaseGoals
+    with TableInfo<$PurchaseGoalsTable, PurchaseGoal> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PurchaseGoalsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _estimatedPriceMeta = const VerificationMeta(
+    'estimatedPrice',
+  );
+  @override
+  late final GeneratedColumn<double> estimatedPrice = GeneratedColumn<double>(
+    'estimated_price',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _savedMeta = const VerificationMeta('saved');
+  @override
+  late final GeneratedColumn<double> saved = GeneratedColumn<double>(
+    'saved',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _priceNoteMeta = const VerificationMeta(
+    'priceNote',
+  );
+  @override
+  late final GeneratedColumn<String> priceNote = GeneratedColumn<String>(
+    'price_note',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    estimatedPrice,
+    saved,
+    priceNote,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'purchase_goals';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PurchaseGoal> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('estimated_price')) {
+      context.handle(
+        _estimatedPriceMeta,
+        estimatedPrice.isAcceptableOrUnknown(
+          data['estimated_price']!,
+          _estimatedPriceMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_estimatedPriceMeta);
+    }
+    if (data.containsKey('saved')) {
+      context.handle(
+        _savedMeta,
+        saved.isAcceptableOrUnknown(data['saved']!, _savedMeta),
+      );
+    }
+    if (data.containsKey('price_note')) {
+      context.handle(
+        _priceNoteMeta,
+        priceNote.isAcceptableOrUnknown(data['price_note']!, _priceNoteMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PurchaseGoal map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PurchaseGoal(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      estimatedPrice: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}estimated_price'],
+      )!,
+      saved: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}saved'],
+      )!,
+      priceNote: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}price_note'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $PurchaseGoalsTable createAlias(String alias) {
+    return $PurchaseGoalsTable(attachedDatabase, alias);
+  }
+}
+
+class PurchaseGoal extends DataClass implements Insertable<PurchaseGoal> {
+  final int id;
+  final String name;
+  final double estimatedPrice;
+  final double saved;
+
+  /// A short AI note about the estimate (model/segment/range), if any.
+  final String? priceNote;
+  final DateTime createdAt;
+  const PurchaseGoal({
+    required this.id,
+    required this.name,
+    required this.estimatedPrice,
+    required this.saved,
+    this.priceNote,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['name'] = Variable<String>(name);
+    map['estimated_price'] = Variable<double>(estimatedPrice);
+    map['saved'] = Variable<double>(saved);
+    if (!nullToAbsent || priceNote != null) {
+      map['price_note'] = Variable<String>(priceNote);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  PurchaseGoalsCompanion toCompanion(bool nullToAbsent) {
+    return PurchaseGoalsCompanion(
+      id: Value(id),
+      name: Value(name),
+      estimatedPrice: Value(estimatedPrice),
+      saved: Value(saved),
+      priceNote: priceNote == null && nullToAbsent
+          ? const Value.absent()
+          : Value(priceNote),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory PurchaseGoal.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PurchaseGoal(
+      id: serializer.fromJson<int>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      estimatedPrice: serializer.fromJson<double>(json['estimatedPrice']),
+      saved: serializer.fromJson<double>(json['saved']),
+      priceNote: serializer.fromJson<String?>(json['priceNote']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'name': serializer.toJson<String>(name),
+      'estimatedPrice': serializer.toJson<double>(estimatedPrice),
+      'saved': serializer.toJson<double>(saved),
+      'priceNote': serializer.toJson<String?>(priceNote),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  PurchaseGoal copyWith({
+    int? id,
+    String? name,
+    double? estimatedPrice,
+    double? saved,
+    Value<String?> priceNote = const Value.absent(),
+    DateTime? createdAt,
+  }) => PurchaseGoal(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    estimatedPrice: estimatedPrice ?? this.estimatedPrice,
+    saved: saved ?? this.saved,
+    priceNote: priceNote.present ? priceNote.value : this.priceNote,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  PurchaseGoal copyWithCompanion(PurchaseGoalsCompanion data) {
+    return PurchaseGoal(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      estimatedPrice: data.estimatedPrice.present
+          ? data.estimatedPrice.value
+          : this.estimatedPrice,
+      saved: data.saved.present ? data.saved.value : this.saved,
+      priceNote: data.priceNote.present ? data.priceNote.value : this.priceNote,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PurchaseGoal(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('estimatedPrice: $estimatedPrice, ')
+          ..write('saved: $saved, ')
+          ..write('priceNote: $priceNote, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, name, estimatedPrice, saved, priceNote, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PurchaseGoal &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.estimatedPrice == this.estimatedPrice &&
+          other.saved == this.saved &&
+          other.priceNote == this.priceNote &&
+          other.createdAt == this.createdAt);
+}
+
+class PurchaseGoalsCompanion extends UpdateCompanion<PurchaseGoal> {
+  final Value<int> id;
+  final Value<String> name;
+  final Value<double> estimatedPrice;
+  final Value<double> saved;
+  final Value<String?> priceNote;
+  final Value<DateTime> createdAt;
+  const PurchaseGoalsCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.estimatedPrice = const Value.absent(),
+    this.saved = const Value.absent(),
+    this.priceNote = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  PurchaseGoalsCompanion.insert({
+    this.id = const Value.absent(),
+    required String name,
+    required double estimatedPrice,
+    this.saved = const Value.absent(),
+    this.priceNote = const Value.absent(),
+    required DateTime createdAt,
+  }) : name = Value(name),
+       estimatedPrice = Value(estimatedPrice),
+       createdAt = Value(createdAt);
+  static Insertable<PurchaseGoal> custom({
+    Expression<int>? id,
+    Expression<String>? name,
+    Expression<double>? estimatedPrice,
+    Expression<double>? saved,
+    Expression<String>? priceNote,
+    Expression<DateTime>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (estimatedPrice != null) 'estimated_price': estimatedPrice,
+      if (saved != null) 'saved': saved,
+      if (priceNote != null) 'price_note': priceNote,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  PurchaseGoalsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? name,
+    Value<double>? estimatedPrice,
+    Value<double>? saved,
+    Value<String?>? priceNote,
+    Value<DateTime>? createdAt,
+  }) {
+    return PurchaseGoalsCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      estimatedPrice: estimatedPrice ?? this.estimatedPrice,
+      saved: saved ?? this.saved,
+      priceNote: priceNote ?? this.priceNote,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (estimatedPrice.present) {
+      map['estimated_price'] = Variable<double>(estimatedPrice.value);
+    }
+    if (saved.present) {
+      map['saved'] = Variable<double>(saved.value);
+    }
+    if (priceNote.present) {
+      map['price_note'] = Variable<String>(priceNote.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PurchaseGoalsCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('estimatedPrice: $estimatedPrice, ')
+          ..write('saved: $saved, ')
+          ..write('priceNote: $priceNote, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $UnparsedMessagesTable extends UnparsedMessages
+    with TableInfo<$UnparsedMessagesTable, UnparsedMessage> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $UnparsedMessagesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _smsIdMeta = const VerificationMeta('smsId');
+  @override
+  late final GeneratedColumn<String> smsId = GeneratedColumn<String>(
+    'sms_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
+  );
+  static const VerificationMeta _bodyMeta = const VerificationMeta('body');
+  @override
+  late final GeneratedColumn<String> body = GeneratedColumn<String>(
+    'body',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _senderMeta = const VerificationMeta('sender');
+  @override
+  late final GeneratedColumn<String> sender = GeneratedColumn<String>(
+    'sender',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _receivedAtMeta = const VerificationMeta(
+    'receivedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> receivedAt = GeneratedColumn<DateTime>(
+    'received_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _reasonMeta = const VerificationMeta('reason');
+  @override
+  late final GeneratedColumn<String> reason = GeneratedColumn<String>(
+    'reason',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('needs_attention'),
+  );
+  static const VerificationMeta _aiAttemptsMeta = const VerificationMeta(
+    'aiAttempts',
+  );
+  @override
+  late final GeneratedColumn<int> aiAttempts = GeneratedColumn<int>(
+    'ai_attempts',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    smsId,
+    body,
+    sender,
+    receivedAt,
+    reason,
+    status,
+    aiAttempts,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'unparsed_messages';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<UnparsedMessage> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('sms_id')) {
+      context.handle(
+        _smsIdMeta,
+        smsId.isAcceptableOrUnknown(data['sms_id']!, _smsIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_smsIdMeta);
+    }
+    if (data.containsKey('body')) {
+      context.handle(
+        _bodyMeta,
+        body.isAcceptableOrUnknown(data['body']!, _bodyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bodyMeta);
+    }
+    if (data.containsKey('sender')) {
+      context.handle(
+        _senderMeta,
+        sender.isAcceptableOrUnknown(data['sender']!, _senderMeta),
+      );
+    }
+    if (data.containsKey('received_at')) {
+      context.handle(
+        _receivedAtMeta,
+        receivedAt.isAcceptableOrUnknown(data['received_at']!, _receivedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_receivedAtMeta);
+    }
+    if (data.containsKey('reason')) {
+      context.handle(
+        _reasonMeta,
+        reason.isAcceptableOrUnknown(data['reason']!, _reasonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_reasonMeta);
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    }
+    if (data.containsKey('ai_attempts')) {
+      context.handle(
+        _aiAttemptsMeta,
+        aiAttempts.isAcceptableOrUnknown(data['ai_attempts']!, _aiAttemptsMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  UnparsedMessage map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return UnparsedMessage(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      smsId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sms_id'],
+      )!,
+      body: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}body'],
+      )!,
+      sender: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sender'],
+      ),
+      receivedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}received_at'],
+      )!,
+      reason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reason'],
+      )!,
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      aiAttempts: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}ai_attempts'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $UnparsedMessagesTable createAlias(String alias) {
+    return $UnparsedMessagesTable(attachedDatabase, alias);
+  }
+}
+
+class UnparsedMessage extends DataClass implements Insertable<UnparsedMessage> {
+  final int id;
+
+  /// Same stable id scheme as transactions, so re-scans don't duplicate.
+  final String smsId;
+  final String body;
+  final String? sender;
+  final DateTime receivedAt;
+
+  /// 'needs_type' | 'needs_amount' | 'needs_structure'.
+  final String reason;
+
+  /// 'needs_attention' | 'ignored' (user/AI said not a txn) | 'resolved'.
+  final String status;
+
+  /// How many times opt-in AI parsing has been attempted (bounds retries).
+  final int aiAttempts;
+  final DateTime createdAt;
+  const UnparsedMessage({
+    required this.id,
+    required this.smsId,
+    required this.body,
+    this.sender,
+    required this.receivedAt,
+    required this.reason,
+    required this.status,
+    required this.aiAttempts,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['sms_id'] = Variable<String>(smsId);
+    map['body'] = Variable<String>(body);
+    if (!nullToAbsent || sender != null) {
+      map['sender'] = Variable<String>(sender);
+    }
+    map['received_at'] = Variable<DateTime>(receivedAt);
+    map['reason'] = Variable<String>(reason);
+    map['status'] = Variable<String>(status);
+    map['ai_attempts'] = Variable<int>(aiAttempts);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  UnparsedMessagesCompanion toCompanion(bool nullToAbsent) {
+    return UnparsedMessagesCompanion(
+      id: Value(id),
+      smsId: Value(smsId),
+      body: Value(body),
+      sender: sender == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sender),
+      receivedAt: Value(receivedAt),
+      reason: Value(reason),
+      status: Value(status),
+      aiAttempts: Value(aiAttempts),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory UnparsedMessage.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return UnparsedMessage(
+      id: serializer.fromJson<int>(json['id']),
+      smsId: serializer.fromJson<String>(json['smsId']),
+      body: serializer.fromJson<String>(json['body']),
+      sender: serializer.fromJson<String?>(json['sender']),
+      receivedAt: serializer.fromJson<DateTime>(json['receivedAt']),
+      reason: serializer.fromJson<String>(json['reason']),
+      status: serializer.fromJson<String>(json['status']),
+      aiAttempts: serializer.fromJson<int>(json['aiAttempts']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'smsId': serializer.toJson<String>(smsId),
+      'body': serializer.toJson<String>(body),
+      'sender': serializer.toJson<String?>(sender),
+      'receivedAt': serializer.toJson<DateTime>(receivedAt),
+      'reason': serializer.toJson<String>(reason),
+      'status': serializer.toJson<String>(status),
+      'aiAttempts': serializer.toJson<int>(aiAttempts),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  UnparsedMessage copyWith({
+    int? id,
+    String? smsId,
+    String? body,
+    Value<String?> sender = const Value.absent(),
+    DateTime? receivedAt,
+    String? reason,
+    String? status,
+    int? aiAttempts,
+    DateTime? createdAt,
+  }) => UnparsedMessage(
+    id: id ?? this.id,
+    smsId: smsId ?? this.smsId,
+    body: body ?? this.body,
+    sender: sender.present ? sender.value : this.sender,
+    receivedAt: receivedAt ?? this.receivedAt,
+    reason: reason ?? this.reason,
+    status: status ?? this.status,
+    aiAttempts: aiAttempts ?? this.aiAttempts,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  UnparsedMessage copyWithCompanion(UnparsedMessagesCompanion data) {
+    return UnparsedMessage(
+      id: data.id.present ? data.id.value : this.id,
+      smsId: data.smsId.present ? data.smsId.value : this.smsId,
+      body: data.body.present ? data.body.value : this.body,
+      sender: data.sender.present ? data.sender.value : this.sender,
+      receivedAt: data.receivedAt.present
+          ? data.receivedAt.value
+          : this.receivedAt,
+      reason: data.reason.present ? data.reason.value : this.reason,
+      status: data.status.present ? data.status.value : this.status,
+      aiAttempts: data.aiAttempts.present
+          ? data.aiAttempts.value
+          : this.aiAttempts,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UnparsedMessage(')
+          ..write('id: $id, ')
+          ..write('smsId: $smsId, ')
+          ..write('body: $body, ')
+          ..write('sender: $sender, ')
+          ..write('receivedAt: $receivedAt, ')
+          ..write('reason: $reason, ')
+          ..write('status: $status, ')
+          ..write('aiAttempts: $aiAttempts, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    smsId,
+    body,
+    sender,
+    receivedAt,
+    reason,
+    status,
+    aiAttempts,
+    createdAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is UnparsedMessage &&
+          other.id == this.id &&
+          other.smsId == this.smsId &&
+          other.body == this.body &&
+          other.sender == this.sender &&
+          other.receivedAt == this.receivedAt &&
+          other.reason == this.reason &&
+          other.status == this.status &&
+          other.aiAttempts == this.aiAttempts &&
+          other.createdAt == this.createdAt);
+}
+
+class UnparsedMessagesCompanion extends UpdateCompanion<UnparsedMessage> {
+  final Value<int> id;
+  final Value<String> smsId;
+  final Value<String> body;
+  final Value<String?> sender;
+  final Value<DateTime> receivedAt;
+  final Value<String> reason;
+  final Value<String> status;
+  final Value<int> aiAttempts;
+  final Value<DateTime> createdAt;
+  const UnparsedMessagesCompanion({
+    this.id = const Value.absent(),
+    this.smsId = const Value.absent(),
+    this.body = const Value.absent(),
+    this.sender = const Value.absent(),
+    this.receivedAt = const Value.absent(),
+    this.reason = const Value.absent(),
+    this.status = const Value.absent(),
+    this.aiAttempts = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  UnparsedMessagesCompanion.insert({
+    this.id = const Value.absent(),
+    required String smsId,
+    required String body,
+    this.sender = const Value.absent(),
+    required DateTime receivedAt,
+    required String reason,
+    this.status = const Value.absent(),
+    this.aiAttempts = const Value.absent(),
+    required DateTime createdAt,
+  }) : smsId = Value(smsId),
+       body = Value(body),
+       receivedAt = Value(receivedAt),
+       reason = Value(reason),
+       createdAt = Value(createdAt);
+  static Insertable<UnparsedMessage> custom({
+    Expression<int>? id,
+    Expression<String>? smsId,
+    Expression<String>? body,
+    Expression<String>? sender,
+    Expression<DateTime>? receivedAt,
+    Expression<String>? reason,
+    Expression<String>? status,
+    Expression<int>? aiAttempts,
+    Expression<DateTime>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (smsId != null) 'sms_id': smsId,
+      if (body != null) 'body': body,
+      if (sender != null) 'sender': sender,
+      if (receivedAt != null) 'received_at': receivedAt,
+      if (reason != null) 'reason': reason,
+      if (status != null) 'status': status,
+      if (aiAttempts != null) 'ai_attempts': aiAttempts,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  UnparsedMessagesCompanion copyWith({
+    Value<int>? id,
+    Value<String>? smsId,
+    Value<String>? body,
+    Value<String?>? sender,
+    Value<DateTime>? receivedAt,
+    Value<String>? reason,
+    Value<String>? status,
+    Value<int>? aiAttempts,
+    Value<DateTime>? createdAt,
+  }) {
+    return UnparsedMessagesCompanion(
+      id: id ?? this.id,
+      smsId: smsId ?? this.smsId,
+      body: body ?? this.body,
+      sender: sender ?? this.sender,
+      receivedAt: receivedAt ?? this.receivedAt,
+      reason: reason ?? this.reason,
+      status: status ?? this.status,
+      aiAttempts: aiAttempts ?? this.aiAttempts,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (smsId.present) {
+      map['sms_id'] = Variable<String>(smsId.value);
+    }
+    if (body.present) {
+      map['body'] = Variable<String>(body.value);
+    }
+    if (sender.present) {
+      map['sender'] = Variable<String>(sender.value);
+    }
+    if (receivedAt.present) {
+      map['received_at'] = Variable<DateTime>(receivedAt.value);
+    }
+    if (reason.present) {
+      map['reason'] = Variable<String>(reason.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (aiAttempts.present) {
+      map['ai_attempts'] = Variable<int>(aiAttempts.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('UnparsedMessagesCompanion(')
+          ..write('id: $id, ')
+          ..write('smsId: $smsId, ')
+          ..write('body: $body, ')
+          ..write('sender: $sender, ')
+          ..write('receivedAt: $receivedAt, ')
+          ..write('reason: $reason, ')
+          ..write('status: $status, ')
+          ..write('aiAttempts: $aiAttempts, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MerchantAliasesTable extends MerchantAliases
+    with TableInfo<$MerchantAliasesTable, MerchantAliase> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MerchantAliasesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _aliasMeta = const VerificationMeta('alias');
+  @override
+  late final GeneratedColumn<String> alias = GeneratedColumn<String>(
+    'alias',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _canonicalMeta = const VerificationMeta(
+    'canonical',
+  );
+  @override
+  late final GeneratedColumn<String> canonical = GeneratedColumn<String>(
+    'canonical',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('user'),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [alias, canonical, source];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'merchant_aliases';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MerchantAliase> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('alias')) {
+      context.handle(
+        _aliasMeta,
+        alias.isAcceptableOrUnknown(data['alias']!, _aliasMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_aliasMeta);
+    }
+    if (data.containsKey('canonical')) {
+      context.handle(
+        _canonicalMeta,
+        canonical.isAcceptableOrUnknown(data['canonical']!, _canonicalMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_canonicalMeta);
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {alias};
+  @override
+  MerchantAliase map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MerchantAliase(
+      alias: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}alias'],
+      )!,
+      canonical: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}canonical'],
+      )!,
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
+    );
+  }
+
+  @override
+  $MerchantAliasesTable createAlias(String alias) {
+    return $MerchantAliasesTable(attachedDatabase, alias);
+  }
+}
+
+class MerchantAliase extends DataClass implements Insertable<MerchantAliase> {
+  /// The raw string as seen in SMS, lowercased.
+  final String alias;
+  final String canonical;
+
+  /// 'user' | 'ai'.
+  final String source;
+  const MerchantAliase({
+    required this.alias,
+    required this.canonical,
+    required this.source,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['alias'] = Variable<String>(alias);
+    map['canonical'] = Variable<String>(canonical);
+    map['source'] = Variable<String>(source);
+    return map;
+  }
+
+  MerchantAliasesCompanion toCompanion(bool nullToAbsent) {
+    return MerchantAliasesCompanion(
+      alias: Value(alias),
+      canonical: Value(canonical),
+      source: Value(source),
+    );
+  }
+
+  factory MerchantAliase.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MerchantAliase(
+      alias: serializer.fromJson<String>(json['alias']),
+      canonical: serializer.fromJson<String>(json['canonical']),
+      source: serializer.fromJson<String>(json['source']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'alias': serializer.toJson<String>(alias),
+      'canonical': serializer.toJson<String>(canonical),
+      'source': serializer.toJson<String>(source),
+    };
+  }
+
+  MerchantAliase copyWith({String? alias, String? canonical, String? source}) =>
+      MerchantAliase(
+        alias: alias ?? this.alias,
+        canonical: canonical ?? this.canonical,
+        source: source ?? this.source,
+      );
+  MerchantAliase copyWithCompanion(MerchantAliasesCompanion data) {
+    return MerchantAliase(
+      alias: data.alias.present ? data.alias.value : this.alias,
+      canonical: data.canonical.present ? data.canonical.value : this.canonical,
+      source: data.source.present ? data.source.value : this.source,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MerchantAliase(')
+          ..write('alias: $alias, ')
+          ..write('canonical: $canonical, ')
+          ..write('source: $source')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(alias, canonical, source);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MerchantAliase &&
+          other.alias == this.alias &&
+          other.canonical == this.canonical &&
+          other.source == this.source);
+}
+
+class MerchantAliasesCompanion extends UpdateCompanion<MerchantAliase> {
+  final Value<String> alias;
+  final Value<String> canonical;
+  final Value<String> source;
+  final Value<int> rowid;
+  const MerchantAliasesCompanion({
+    this.alias = const Value.absent(),
+    this.canonical = const Value.absent(),
+    this.source = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MerchantAliasesCompanion.insert({
+    required String alias,
+    required String canonical,
+    this.source = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : alias = Value(alias),
+       canonical = Value(canonical);
+  static Insertable<MerchantAliase> custom({
+    Expression<String>? alias,
+    Expression<String>? canonical,
+    Expression<String>? source,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (alias != null) 'alias': alias,
+      if (canonical != null) 'canonical': canonical,
+      if (source != null) 'source': source,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MerchantAliasesCompanion copyWith({
+    Value<String>? alias,
+    Value<String>? canonical,
+    Value<String>? source,
+    Value<int>? rowid,
+  }) {
+    return MerchantAliasesCompanion(
+      alias: alias ?? this.alias,
+      canonical: canonical ?? this.canonical,
+      source: source ?? this.source,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (alias.present) {
+      map['alias'] = Variable<String>(alias.value);
+    }
+    if (canonical.present) {
+      map['canonical'] = Variable<String>(canonical.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MerchantAliasesCompanion(')
+          ..write('alias: $alias, ')
+          ..write('canonical: $canonical, ')
+          ..write('source: $source, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -2358,6 +3573,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $AiInsightsTable aiInsights = $AiInsightsTable(this);
   late final $MerchantCategoryCacheTable merchantCategoryCache =
       $MerchantCategoryCacheTable(this);
+  late final $PurchaseGoalsTable purchaseGoals = $PurchaseGoalsTable(this);
+  late final $UnparsedMessagesTable unparsedMessages = $UnparsedMessagesTable(
+    this,
+  );
+  late final $MerchantAliasesTable merchantAliases = $MerchantAliasesTable(
+    this,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2369,6 +3591,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     alertLogs,
     aiInsights,
     merchantCategoryCache,
+    purchaseGoals,
+    unparsedMessages,
+    merchantAliases,
   ];
 }
 
@@ -3624,6 +4849,669 @@ typedef $$MerchantCategoryCacheTableProcessedTableManager =
       MerchantCategoryCacheData,
       PrefetchHooks Function()
     >;
+typedef $$PurchaseGoalsTableCreateCompanionBuilder =
+    PurchaseGoalsCompanion Function({
+      Value<int> id,
+      required String name,
+      required double estimatedPrice,
+      Value<double> saved,
+      Value<String?> priceNote,
+      required DateTime createdAt,
+    });
+typedef $$PurchaseGoalsTableUpdateCompanionBuilder =
+    PurchaseGoalsCompanion Function({
+      Value<int> id,
+      Value<String> name,
+      Value<double> estimatedPrice,
+      Value<double> saved,
+      Value<String?> priceNote,
+      Value<DateTime> createdAt,
+    });
+
+class $$PurchaseGoalsTableFilterComposer
+    extends Composer<_$AppDatabase, $PurchaseGoalsTable> {
+  $$PurchaseGoalsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get estimatedPrice => $composableBuilder(
+    column: $table.estimatedPrice,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get saved => $composableBuilder(
+    column: $table.saved,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get priceNote => $composableBuilder(
+    column: $table.priceNote,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PurchaseGoalsTableOrderingComposer
+    extends Composer<_$AppDatabase, $PurchaseGoalsTable> {
+  $$PurchaseGoalsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get estimatedPrice => $composableBuilder(
+    column: $table.estimatedPrice,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get saved => $composableBuilder(
+    column: $table.saved,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get priceNote => $composableBuilder(
+    column: $table.priceNote,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PurchaseGoalsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PurchaseGoalsTable> {
+  $$PurchaseGoalsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<double> get estimatedPrice => $composableBuilder(
+    column: $table.estimatedPrice,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get saved =>
+      $composableBuilder(column: $table.saved, builder: (column) => column);
+
+  GeneratedColumn<String> get priceNote =>
+      $composableBuilder(column: $table.priceNote, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$PurchaseGoalsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PurchaseGoalsTable,
+          PurchaseGoal,
+          $$PurchaseGoalsTableFilterComposer,
+          $$PurchaseGoalsTableOrderingComposer,
+          $$PurchaseGoalsTableAnnotationComposer,
+          $$PurchaseGoalsTableCreateCompanionBuilder,
+          $$PurchaseGoalsTableUpdateCompanionBuilder,
+          (
+            PurchaseGoal,
+            BaseReferences<_$AppDatabase, $PurchaseGoalsTable, PurchaseGoal>,
+          ),
+          PurchaseGoal,
+          PrefetchHooks Function()
+        > {
+  $$PurchaseGoalsTableTableManager(_$AppDatabase db, $PurchaseGoalsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PurchaseGoalsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PurchaseGoalsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PurchaseGoalsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<double> estimatedPrice = const Value.absent(),
+                Value<double> saved = const Value.absent(),
+                Value<String?> priceNote = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+              }) => PurchaseGoalsCompanion(
+                id: id,
+                name: name,
+                estimatedPrice: estimatedPrice,
+                saved: saved,
+                priceNote: priceNote,
+                createdAt: createdAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String name,
+                required double estimatedPrice,
+                Value<double> saved = const Value.absent(),
+                Value<String?> priceNote = const Value.absent(),
+                required DateTime createdAt,
+              }) => PurchaseGoalsCompanion.insert(
+                id: id,
+                name: name,
+                estimatedPrice: estimatedPrice,
+                saved: saved,
+                priceNote: priceNote,
+                createdAt: createdAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PurchaseGoalsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PurchaseGoalsTable,
+      PurchaseGoal,
+      $$PurchaseGoalsTableFilterComposer,
+      $$PurchaseGoalsTableOrderingComposer,
+      $$PurchaseGoalsTableAnnotationComposer,
+      $$PurchaseGoalsTableCreateCompanionBuilder,
+      $$PurchaseGoalsTableUpdateCompanionBuilder,
+      (
+        PurchaseGoal,
+        BaseReferences<_$AppDatabase, $PurchaseGoalsTable, PurchaseGoal>,
+      ),
+      PurchaseGoal,
+      PrefetchHooks Function()
+    >;
+typedef $$UnparsedMessagesTableCreateCompanionBuilder =
+    UnparsedMessagesCompanion Function({
+      Value<int> id,
+      required String smsId,
+      required String body,
+      Value<String?> sender,
+      required DateTime receivedAt,
+      required String reason,
+      Value<String> status,
+      Value<int> aiAttempts,
+      required DateTime createdAt,
+    });
+typedef $$UnparsedMessagesTableUpdateCompanionBuilder =
+    UnparsedMessagesCompanion Function({
+      Value<int> id,
+      Value<String> smsId,
+      Value<String> body,
+      Value<String?> sender,
+      Value<DateTime> receivedAt,
+      Value<String> reason,
+      Value<String> status,
+      Value<int> aiAttempts,
+      Value<DateTime> createdAt,
+    });
+
+class $$UnparsedMessagesTableFilterComposer
+    extends Composer<_$AppDatabase, $UnparsedMessagesTable> {
+  $$UnparsedMessagesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get smsId => $composableBuilder(
+    column: $table.smsId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sender => $composableBuilder(
+    column: $table.sender,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get aiAttempts => $composableBuilder(
+    column: $table.aiAttempts,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$UnparsedMessagesTableOrderingComposer
+    extends Composer<_$AppDatabase, $UnparsedMessagesTable> {
+  $$UnparsedMessagesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get smsId => $composableBuilder(
+    column: $table.smsId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sender => $composableBuilder(
+    column: $table.sender,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get aiAttempts => $composableBuilder(
+    column: $table.aiAttempts,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$UnparsedMessagesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $UnparsedMessagesTable> {
+  $$UnparsedMessagesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get smsId =>
+      $composableBuilder(column: $table.smsId, builder: (column) => column);
+
+  GeneratedColumn<String> get body =>
+      $composableBuilder(column: $table.body, builder: (column) => column);
+
+  GeneratedColumn<String> get sender =>
+      $composableBuilder(column: $table.sender, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get receivedAt => $composableBuilder(
+    column: $table.receivedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reason =>
+      $composableBuilder(column: $table.reason, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<int> get aiAttempts => $composableBuilder(
+    column: $table.aiAttempts,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$UnparsedMessagesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $UnparsedMessagesTable,
+          UnparsedMessage,
+          $$UnparsedMessagesTableFilterComposer,
+          $$UnparsedMessagesTableOrderingComposer,
+          $$UnparsedMessagesTableAnnotationComposer,
+          $$UnparsedMessagesTableCreateCompanionBuilder,
+          $$UnparsedMessagesTableUpdateCompanionBuilder,
+          (
+            UnparsedMessage,
+            BaseReferences<
+              _$AppDatabase,
+              $UnparsedMessagesTable,
+              UnparsedMessage
+            >,
+          ),
+          UnparsedMessage,
+          PrefetchHooks Function()
+        > {
+  $$UnparsedMessagesTableTableManager(
+    _$AppDatabase db,
+    $UnparsedMessagesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$UnparsedMessagesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$UnparsedMessagesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$UnparsedMessagesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> smsId = const Value.absent(),
+                Value<String> body = const Value.absent(),
+                Value<String?> sender = const Value.absent(),
+                Value<DateTime> receivedAt = const Value.absent(),
+                Value<String> reason = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<int> aiAttempts = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+              }) => UnparsedMessagesCompanion(
+                id: id,
+                smsId: smsId,
+                body: body,
+                sender: sender,
+                receivedAt: receivedAt,
+                reason: reason,
+                status: status,
+                aiAttempts: aiAttempts,
+                createdAt: createdAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String smsId,
+                required String body,
+                Value<String?> sender = const Value.absent(),
+                required DateTime receivedAt,
+                required String reason,
+                Value<String> status = const Value.absent(),
+                Value<int> aiAttempts = const Value.absent(),
+                required DateTime createdAt,
+              }) => UnparsedMessagesCompanion.insert(
+                id: id,
+                smsId: smsId,
+                body: body,
+                sender: sender,
+                receivedAt: receivedAt,
+                reason: reason,
+                status: status,
+                aiAttempts: aiAttempts,
+                createdAt: createdAt,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$UnparsedMessagesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $UnparsedMessagesTable,
+      UnparsedMessage,
+      $$UnparsedMessagesTableFilterComposer,
+      $$UnparsedMessagesTableOrderingComposer,
+      $$UnparsedMessagesTableAnnotationComposer,
+      $$UnparsedMessagesTableCreateCompanionBuilder,
+      $$UnparsedMessagesTableUpdateCompanionBuilder,
+      (
+        UnparsedMessage,
+        BaseReferences<_$AppDatabase, $UnparsedMessagesTable, UnparsedMessage>,
+      ),
+      UnparsedMessage,
+      PrefetchHooks Function()
+    >;
+typedef $$MerchantAliasesTableCreateCompanionBuilder =
+    MerchantAliasesCompanion Function({
+      required String alias,
+      required String canonical,
+      Value<String> source,
+      Value<int> rowid,
+    });
+typedef $$MerchantAliasesTableUpdateCompanionBuilder =
+    MerchantAliasesCompanion Function({
+      Value<String> alias,
+      Value<String> canonical,
+      Value<String> source,
+      Value<int> rowid,
+    });
+
+class $$MerchantAliasesTableFilterComposer
+    extends Composer<_$AppDatabase, $MerchantAliasesTable> {
+  $$MerchantAliasesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get alias => $composableBuilder(
+    column: $table.alias,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get canonical => $composableBuilder(
+    column: $table.canonical,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MerchantAliasesTableOrderingComposer
+    extends Composer<_$AppDatabase, $MerchantAliasesTable> {
+  $$MerchantAliasesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get alias => $composableBuilder(
+    column: $table.alias,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get canonical => $composableBuilder(
+    column: $table.canonical,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MerchantAliasesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $MerchantAliasesTable> {
+  $$MerchantAliasesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get alias =>
+      $composableBuilder(column: $table.alias, builder: (column) => column);
+
+  GeneratedColumn<String> get canonical =>
+      $composableBuilder(column: $table.canonical, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+}
+
+class $$MerchantAliasesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $MerchantAliasesTable,
+          MerchantAliase,
+          $$MerchantAliasesTableFilterComposer,
+          $$MerchantAliasesTableOrderingComposer,
+          $$MerchantAliasesTableAnnotationComposer,
+          $$MerchantAliasesTableCreateCompanionBuilder,
+          $$MerchantAliasesTableUpdateCompanionBuilder,
+          (
+            MerchantAliase,
+            BaseReferences<
+              _$AppDatabase,
+              $MerchantAliasesTable,
+              MerchantAliase
+            >,
+          ),
+          MerchantAliase,
+          PrefetchHooks Function()
+        > {
+  $$MerchantAliasesTableTableManager(
+    _$AppDatabase db,
+    $MerchantAliasesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MerchantAliasesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MerchantAliasesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MerchantAliasesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> alias = const Value.absent(),
+                Value<String> canonical = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MerchantAliasesCompanion(
+                alias: alias,
+                canonical: canonical,
+                source: source,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String alias,
+                required String canonical,
+                Value<String> source = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MerchantAliasesCompanion.insert(
+                alias: alias,
+                canonical: canonical,
+                source: source,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MerchantAliasesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $MerchantAliasesTable,
+      MerchantAliase,
+      $$MerchantAliasesTableFilterComposer,
+      $$MerchantAliasesTableOrderingComposer,
+      $$MerchantAliasesTableAnnotationComposer,
+      $$MerchantAliasesTableCreateCompanionBuilder,
+      $$MerchantAliasesTableUpdateCompanionBuilder,
+      (
+        MerchantAliase,
+        BaseReferences<_$AppDatabase, $MerchantAliasesTable, MerchantAliase>,
+      ),
+      MerchantAliase,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -3640,4 +5528,10 @@ class $AppDatabaseManager {
       $$AiInsightsTableTableManager(_db, _db.aiInsights);
   $$MerchantCategoryCacheTableTableManager get merchantCategoryCache =>
       $$MerchantCategoryCacheTableTableManager(_db, _db.merchantCategoryCache);
+  $$PurchaseGoalsTableTableManager get purchaseGoals =>
+      $$PurchaseGoalsTableTableManager(_db, _db.purchaseGoals);
+  $$UnparsedMessagesTableTableManager get unparsedMessages =>
+      $$UnparsedMessagesTableTableManager(_db, _db.unparsedMessages);
+  $$MerchantAliasesTableTableManager get merchantAliases =>
+      $$MerchantAliasesTableTableManager(_db, _db.merchantAliases);
 }

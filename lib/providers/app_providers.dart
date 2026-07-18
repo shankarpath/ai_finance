@@ -2,12 +2,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../repositories/transaction_repository.dart';
 import '../services/ai_merchant_categorizer.dart';
+import '../services/ai_sms_parser.dart';
 import '../services/ai_service.dart';
 import '../services/categorizer_service.dart';
 import '../services/coach_service.dart';
 import '../services/database_service.dart';
 import '../services/export_service.dart';
 import '../services/merchant_normalizer.dart';
+import '../services/notification_capture_service.dart';
 import '../services/notification_service.dart';
 import '../services/parser_service.dart';
 import '../services/settings_service.dart';
@@ -16,6 +18,7 @@ import 'analytics_data.dart';
 import 'budget_progress.dart';
 import 'dashboard_stats.dart';
 import 'safe_to_spend.dart';
+import 'savings_capacity.dart';
 
 // ---- Infrastructure singletons -------------------------------------------
 
@@ -52,6 +55,22 @@ final aiMerchantCategorizerProvider = Provider<AiMerchantCategorizer>((ref) {
   );
 });
 
+final aiSmsParserProvider = Provider<AiSmsParser>((ref) {
+  return AiSmsParser(
+    ai: ref.watch(aiServiceProvider),
+    settings: ref.watch(settingsServiceProvider),
+    db: ref.watch(databaseProvider),
+  );
+});
+
+final notificationCaptureProvider =
+    Provider<NotificationCaptureService>((ref) => NotificationCaptureService());
+
+/// Whether the user has granted notification access (the second ingestion
+/// source). Refresh with `ref.invalidate` after returning from settings.
+final notifCaptureEnabledProvider = FutureProvider<bool>(
+    (ref) => ref.watch(notificationCaptureProvider).isEnabled());
+
 /// Whether cloud AI is usable (API key present + consent granted). Refreshable
 /// via `ref.invalidate(aiReadyProvider)` after the user changes settings.
 final aiReadyProvider = FutureProvider<bool>((ref) {
@@ -85,9 +104,12 @@ final transactionRepositoryProvider = Provider<TransactionRepository>((ref) {
     normalizer: ref.watch(merchantNormalizerProvider),
     categorizer: ref.watch(categorizerServiceProvider),
     aiCategorizer: ref.watch(aiMerchantCategorizerProvider),
+    aiSmsParser: ref.watch(aiSmsParserProvider),
     notifications: ref.watch(notificationServiceProvider),
     coach: ref.watch(coachServiceProvider),
+    settings: ref.watch(settingsServiceProvider),
     db: ref.watch(databaseProvider),
+    notifCapture: ref.watch(notificationCaptureProvider),
   );
 });
 
@@ -126,6 +148,50 @@ final reviewQueueProvider = Provider<List<Transaction>>((ref) {
 /// User-set category budgets (reactive).
 final budgetsProvider = StreamProvider<List<Budget>>((ref) {
   return ref.watch(databaseProvider).watchBudgets();
+});
+
+/// The user's purchase goals (bike, TV, …), reactive.
+final purchaseGoalsProvider = StreamProvider<List<PurchaseGoal>>((ref) {
+  return ref.watch(databaseProvider).watchPurchaseGoals();
+});
+
+/// Financial-sender messages the parser couldn't read (the never-drop queue).
+final needsAttentionProvider = StreamProvider<List<UnparsedMessage>>((ref) {
+  return ref.watch(databaseProvider).watchNeedsAttention();
+});
+
+/// Live count of messages awaiting review (for badges).
+final needsAttentionCountProvider = StreamProvider<int>((ref) {
+  return ref.watch(databaseProvider).watchNeedsAttentionCount();
+});
+
+/// The last inbox-scan tally (for the diagnostics screen).
+final lastScanProvider = FutureProvider<ScanSummary>((ref) {
+  return ref.watch(settingsServiceProvider).getLastScan();
+});
+
+/// The user's set monthly savings goal, if any.
+final savingsGoalProvider = FutureProvider<double?>(
+    (ref) => ref.watch(settingsServiceProvider).getMonthlySavingsGoal());
+
+/// Estimated monthly saving capacity from recent income vs discretionary spend.
+final savingsCapacityProvider = Provider<SavingsCapacity>((ref) {
+  final txns = ref.watch(allTransactionsProvider).value ?? const [];
+  return SavingsCapacity.from(txns, now: DateTime.now());
+});
+
+/// The monthly amount used to project purchase-goal timelines: the user's set
+/// savings goal when present, otherwise their estimated monthly surplus.
+final monthlySavingProvider = Provider<({double amount, String basis})>((ref) {
+  final goal = ref.watch(savingsGoalProvider).value;
+  if (goal != null && goal > 0) {
+    return (amount: goal, basis: 'your monthly savings goal');
+  }
+  final cap = ref.watch(savingsCapacityProvider);
+  if (cap.isKnown) {
+    return (amount: cap.monthlyNet, basis: 'your recent monthly surplus');
+  }
+  return (amount: 0.0, basis: 'not enough history yet');
 });
 
 /// The daily "safe to spend" number derived from budgets + this month's spend.

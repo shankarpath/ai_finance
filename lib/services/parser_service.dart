@@ -4,18 +4,68 @@ import 'package:crypto/crypto.dart';
 
 import '../models/parsed_sms.dart';
 
+/// Why a message could not be turned into a transaction (or that it was).
+enum ParseStatus {
+  /// Successfully parsed — [ParseResult.parsed] is non-null.
+  parsed,
+
+  /// Sender isn't a bank/payment service — not our concern.
+  ignoredSender,
+
+  /// A real bank message, but not money movement (OTP, promo, bill reminder).
+  ignoredNonTxn,
+
+  /// Looks transactional but no debit/credit direction could be determined.
+  needsType,
+
+  /// Looks transactional but no amount could be extracted.
+  needsAmount,
+
+  /// Looks transactional but lacks corroborating structure (a/c, ref, rail).
+  needsStructure,
+
+  /// The body parses as a clean transaction but the sender isn't a known
+  /// bank header — likely a bank we haven't listed yet. Surfaced for review
+  /// so a new sender template never silently loses transactions.
+  unknownSender,
+}
+
+/// The full outcome of classifying one SMS: either a [parsed] transaction, or a
+/// reason it wasn't. Lets the pipeline record *every* message instead of
+/// silently dropping the ones the regex can't handle.
+class ParseResult {
+  final ParsedSms? parsed;
+  final ParseStatus status;
+  const ParseResult._(this.status, [this.parsed]);
+
+  factory ParseResult.ok(ParsedSms p) => ParseResult._(ParseStatus.parsed, p);
+  factory ParseResult.fail(ParseStatus s) => ParseResult._(s);
+
+  bool get isParsed => parsed != null;
+
+  /// A message we couldn't confidently log but that looks like it should have
+  /// been a transaction — these must be surfaced for review, never dropped.
+  bool get needsAttention =>
+      status == ParseStatus.needsType ||
+      status == ParseStatus.needsAmount ||
+      status == ParseStatus.needsStructure ||
+      status == ParseStatus.unknownSender;
+}
+
 /// Parses raw bank SMS text into a [ParsedSms].
 ///
 /// The parser is intentionally conservative: if a message does not look like a
-/// real debit/credit transaction it returns `null` so that OTPs, promotional
-/// messages, and balance-enquiry replies are ignored.
+/// real debit/credit transaction [parse] returns `null`. Use [classify] instead
+/// when you need to know *why* (to route unparseable-but-financial messages to a
+/// review queue rather than losing them).
 class ParserService {
   const ParserService();
 
   // Words that indicate money left the account. "txn" covers HDFC-style card
   // debits ("Txn Rs.X On ... Card ... At <merchant>") that carry no other verb.
   static final _debitWords = RegExp(
-    r'\b(debit(?:ed)?|spent|paid|withdrawn|purchase(?:d)?|sent|deducted|txn|dr)\b',
+    r'\b(debit(?:ed)?|spent|paid|withdrawn|purchase(?:d)?|sent|deducted|'
+    r'transferred|txn|dr)\b',
     caseSensitive: false,
   );
 
@@ -52,13 +102,42 @@ class ParserService {
 
   // SMS headers (DLT sender IDs) that belong to banks / payment services.
   // Matched as substrings of the uppercased sender, e.g. "AD-HDFCBK-S".
+  // Keep tokens ≥3 chars to avoid false positives on promo headers.
   static const _financialSenderTokens = [
     'HDFC', 'SBI', 'ICIC', 'AXIS', 'KOTAK', 'PNB', 'BOB', 'BOI', 'CANBNK',
     'CANARA', 'UNION', 'IDFC', 'YES', 'INDUS', 'INDB', 'CENTBK', 'UCO', 'IOB',
     'FEDBNK', 'FEDERAL', 'RBL', 'AUBANK', 'BANDHAN', 'IDBI', 'CITI', 'HSBC',
     'SCB', 'DBS', 'AMEX', 'PAYTM', 'PHONPE', 'GPAY', 'AMZN', 'BHIM', 'UPI',
     'JUPITER', 'SLICE', 'CRED', 'BANK', 'BNK', 'CARD', 'CRD', 'NPCI',
+    // Additional banks / RRBs / small finance & payments banks.
+    'BARODA', 'MAHABK', 'MAHB', 'KARUR', 'KVB', 'TMBL', 'TMBNK', 'DCBBNK',
+    'EQUITAS', 'UJJIVN', 'UJJIVAN', 'JANABK', 'FINCARE', 'IPPB', 'AIRBNK',
+    'NSDLPB', 'SARASWAT', 'COSMOS', 'SVCBNK', 'APGVB', 'TSGB', 'KGBBNK',
+    // Payment / credit apps that send real transaction alerts.
+    'NAVI', 'LAZYPAY', 'SIMPL', 'MOBIKW', 'FREECH', 'ONECRD', 'ONECARD',
+    'FAMPAY', 'FIMONY', 'RZPAY', 'RAZORP', 'BAJAJF', 'BAJFIN', 'TATACAP',
+    'WHTSAP', 'APAY',
   ];
+
+  // Positive override for the non-transaction filter: a money verb followed
+  // closely by a currency amount ("paid Rs. 5,175.00 at X") is real movement
+  // even when the message ALSO mentions promo-ish words. BOBCARD, for one,
+  // appends "and earned reward points!" to every genuine spend alert — without
+  // this override those debits are misfiled as promos and lost. Reminders stay
+  // filtered because their verb never directly precedes the amount ("Minimum
+  // Due of Rs.X ... please pay").
+  static final _strongTxn = RegExp(
+    r'\b(?:spent|paid|debited|credited|withdrawn|deducted|sent|received)\b'
+    r'[^.\n]{0,30}?(?:rs|inr|₹)\.?\s*:?\s*[\d,]+',
+    caseSensitive: false,
+  );
+
+  // The override must never rescue future/reminder phrasing ("will be
+  // debited", "minimum due", "ignore if already paid", statements).
+  static final _reminderish = RegExp(
+    r'\bwill\s+be\b|\bshall\s+be\b|\bdue\b|ignore\s+if|statement',
+    caseSensitive: false,
+  );
 
   // A transaction that was attempted but never completed. These SMS come from
   // real bank senders and otherwise look exactly like debits, so without this
@@ -77,11 +156,39 @@ class ParserService {
     caseSensitive: false,
   );
 
-  // A currency amount such as "Rs.1,250.00", "INR 1250", "₹ 1,250".
+  // ---- Amount pattern library ----------------------------------------------
+  // Ordered, most-precise first. Banks constantly change templates; a missed
+  // amount silently downgrades a transaction to the review queue, so each
+  // observed format gets its own entry rather than one brittle mega-regex.
+
+  // 1. Currency-prefixed: "Rs.1,250.00", "INR 1250", "₹ 1,250", "Rs:500".
   static final _money = RegExp(
-    r'(?:rs|inr|₹)\.?\s*([\d,]+(?:\.\d{1,2})?)',
+    r'(?:rs|inr|₹)\.?\s*:?\s*([\d,]+(?:\.\d{1,2})?)',
     caseSensitive: false,
   );
+
+  // 2. Verb-then-amount without a currency marker: "debited by 1200.0",
+  //    "credited with 500", "debited for 349" (SBI/Canara/RRB style).
+  static final _amountAfterVerb = RegExp(
+    r'\b(?:debited|credited|deducted|withdrawn|deposited|spent|paid|sent|'
+    r'received|transferred)\s*(?:by|with|for|of)?\s*[:\-]?\s*'
+    r'(?:rs|inr|₹)?\.?\s*([\d,]+(?:\.\d{1,2})?)\b',
+    caseSensitive: false,
+  );
+
+  // 3. Amount-then-verb: "1,200.00 debited from A/c", "500 is credited".
+  static final _amountBeforeVerb = RegExp(
+    r'\b([\d,]+(?:\.\d{1,2})?)\s*(?:is|was|has been)?\s*'
+    r'(?:debited|credited|deducted|withdrawn|deposited)\b',
+    caseSensitive: false,
+  );
+
+  /// Tried in order; first pattern that yields a valid figure wins.
+  static final List<RegExp> _amountPatterns = [
+    _money,
+    _amountAfterVerb,
+    _amountBeforeVerb,
+  ];
 
   // Balance clause, e.g. "Avbl Bal Rs.23,560", "Available balance: INR 23560".
   static final _balance = RegExp(
@@ -103,19 +210,49 @@ class ParserService {
     caseSensitive: false,
   );
 
+  /// Backwards-compatible: returns the parsed transaction or null. Prefer
+  /// [classify] when you need the failure reason.
   ParsedSms? parse({
     required String body,
     required DateTime receivedAt,
     String? sender,
     String? providerId,
   }) {
-    if (body.trim().isEmpty) return null;
+    return classify(
+      body: body,
+      receivedAt: receivedAt,
+      sender: sender,
+      providerId: providerId,
+    ).parsed;
+  }
+
+  /// Full classification of one SMS — a transaction, or the reason it isn't.
+  ParseResult classify({
+    required String body,
+    required DateTime receivedAt,
+    String? sender,
+    String? providerId,
+  }) {
+    if (body.trim().isEmpty) {
+      return ParseResult.fail(ParseStatus.ignoredNonTxn);
+    }
     final text = body.replaceAll('\n', ' ');
 
-    // Only trust messages from a bank / payment sender (when the sender is known).
-    if (!_looksFinancialSender(sender)) return null;
+    // Sender gate: unknown senders are not trusted for auto-logging, but if the
+    // body parses like a clean transaction it goes to the review queue instead
+    // of being dropped — new bank headers must never lose transactions.
+    final senderKnown = _looksFinancialSender(sender);
 
-    if (_nonTransaction.hasMatch(text)) return null;
+    // The promo/reminder filter is skipped when the body carries an
+    // unmistakable money-movement clause (verb + amount) — see [_strongTxn] —
+    // and no future/reminder phrasing.
+    final strongOverride =
+        _strongTxn.hasMatch(text) && !_reminderish.hasMatch(text);
+    if (!strongOverride && _nonTransaction.hasMatch(text)) {
+      return ParseResult.fail(senderKnown
+          ? ParseStatus.ignoredNonTxn
+          : ParseStatus.ignoredSender);
+    }
 
     var type = _detectType(text);
     // Failed-payment alerts often carry no debit/credit verb at all
@@ -127,11 +264,17 @@ class ParserService {
             .hasMatch(text)) {
       type = 'debit';
     }
-    if (type == null) return null;
+    if (type == null) {
+      return ParseResult.fail(
+          senderKnown ? ParseStatus.needsType : ParseStatus.ignoredSender);
+    }
 
     final balance = _extractBalance(text);
     final amount = _extractAmount(text, balanceValue: balance);
-    if (amount == null || amount <= 0) return null;
+    if (amount == null || amount <= 0) {
+      return ParseResult.fail(
+          senderKnown ? ParseStatus.needsAmount : ParseStatus.ignoredSender);
+    }
 
     final accountLast4 = _firstGroup(_accountTail, text);
     final paymentMethod = _detectPaymentMethod(text);
@@ -143,21 +286,29 @@ class ParserService {
         balance != null ||
         paymentMethod != null ||
         _txnRef.hasMatch(text);
-    if (!hasStructure) return null;
+    if (!hasStructure) {
+      return ParseResult.fail(senderKnown
+          ? ParseStatus.needsStructure
+          : ParseStatus.ignoredSender);
+    }
 
-    return ParsedSms(
+    // Fully transaction-shaped but from an unrecognised sender: queue it for
+    // the user instead of auto-logging (or worse, dropping) it.
+    if (!senderKnown) return ParseResult.fail(ParseStatus.unknownSender);
+
+    return ParseResult.ok(ParsedSms(
       amount: amount,
       transactionType: type,
       date: receivedAt,
       smsBody: body,
-      smsId: _dedupId(body: body, receivedAt: receivedAt, providerId: providerId),
+      smsId: dedupId(body: body, receivedAt: receivedAt, providerId: providerId),
       merchant: _extractMerchant(text),
       accountLast4: accountLast4,
       balance: balance,
       paymentMethod: paymentMethod,
       referenceNo: _firstGroup(_txnRef, text),
       status: _detectStatus(text, type),
-    );
+    ));
   }
 
   /// 'failed' when the payment never went through; 'reversed' when a *debit*
@@ -211,29 +362,34 @@ class ParserService {
     return _toDouble(m.group(1));
   }
 
-  /// The transaction amount is the first currency figure that is *not* the
-  /// balance clause.
+  /// The transaction amount is the first figure (per the pattern library, in
+  /// priority order) that is *not* part of the balance clause.
   double? _extractAmount(String text, {double? balanceValue}) {
     final balanceMatch = _balance.firstMatch(text);
-    for (final m in _money.allMatches(text)) {
-      // Skip the figure that belongs to the balance clause.
-      if (balanceMatch != null &&
-          m.start >= balanceMatch.start &&
-          m.end <= balanceMatch.end) {
-        continue;
+    for (final pattern in _amountPatterns) {
+      for (final m in pattern.allMatches(text)) {
+        // Skip the figure that belongs to the balance clause.
+        if (balanceMatch != null &&
+            m.start < balanceMatch.end &&
+            m.end > balanceMatch.start) {
+          continue;
+        }
+        final value = _toDouble(m.group(1));
+        if (value != null && value > 0) return value;
       }
-      final value = _toDouble(m.group(1));
-      if (value != null && value > 0) return value;
     }
     return null;
   }
 
   String? _extractMerchant(String text) {
-    // 1. Prefer an explicit "at / to / for <name>" clause.
+    // 1. Prefer an explicit "at / to / for / @ <name>" clause. The boundary set
+    // must cover each template's connector word ("with your … Card", "and
+    // earned…") or the lazy match runs past 40 chars and the clause is lost.
     final atMatch = RegExp(
-      r'\b(?:at|to|towards|for|via\s+upi\s+to)\s+'
+      r'(?:\b(?:at|to|towards|for|trf\s+to|via\s+upi\s+to)\s+|@\s*)'
       r"([A-Za-z0-9][A-Za-z0-9&'@.\- ]{1,40}?)"
-      r'(?=\s+(?:on|via|by|ref|txn|upi|avl|avbl|bal|dated|info|a/?c|using|not|call)\b|[.,;*]|$)',
+      r'(?=\s+(?:on|via|by|ref|refno|txn|upi|avl|avbl|bal|dated|info|a/?c|'
+      r'using|not|call|with|and|is|was|linked)\b|[.,;*]|$)',
       caseSensitive: false,
     ).firstMatch(text);
     if (atMatch != null) {
@@ -257,6 +413,11 @@ class ParserService {
     'pay', 'gpay', 'google pay', 'googlepay', 'phonepe', 'phone pe', 'paytm',
     'upi', 'imps', 'neft', 'rtgs', 'a/c', 'ac', 'account', 'you', 'your',
     'self', 'vpa', 'bank',
+    // Currency tokens that leak in when the clause is "for Rs. 3,000".
+    'rs', 'inr', 'rupees',
+    // Template fragments that are never merchants.
+    'dispute this', 'dispute this payment', 'suspicious high risk',
+    'this payment',
   };
 
   String? _cleanMerchant(String raw) {
@@ -295,7 +456,8 @@ class ParserService {
   }
 
   /// Deterministic id so re-scanning the inbox never inserts duplicates.
-  String _dedupId({
+  /// Public so the unparsed-message queue can share the same identity scheme.
+  String dedupId({
     required String body,
     required DateTime receivedAt,
     String? providerId,

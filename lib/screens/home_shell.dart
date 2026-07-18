@@ -7,6 +7,7 @@ import 'analytics_screen.dart';
 import 'budget_screen.dart';
 import 'chat_screen.dart';
 import 'dashboard_screen.dart';
+import 'goals_screen.dart';
 
 /// Top-level tab shell. Also re-syncs the SMS inbox whenever the app returns
 /// to the foreground, so the data is always current when the user looks at it
@@ -26,8 +27,12 @@ class _HomeShellState extends ConsumerState<HomeShell>
     DashboardScreen(),
     AnalyticsScreen(),
     BudgetScreen(),
+    GoalsScreen(),
     ChatScreen(),
   ];
+
+  /// Index of the Coach tab (last), used by [_openCoach].
+  static const _coachIndex = 4;
 
   @override
   void initState() {
@@ -44,14 +49,17 @@ class _HomeShellState extends ConsumerState<HomeShell>
   }
 
   void _openCoach() {
-    if (mounted) setState(() => _index = 3);
+    if (mounted) setState(() => _index = _coachIndex);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Catch up on any SMS that arrived while the app was backgrounded.
+      // Catch up on any SMS + captured app notifications that arrived while
+      // the app was backgrounded (syncInbox drains both sources).
       ref.read(transactionRepositoryProvider).syncInbox();
+      // The user may have just toggled notification access in system settings.
+      ref.invalidate(notifCaptureEnabledProvider);
     }
   }
 
@@ -77,6 +85,11 @@ class _HomeShellState extends ConsumerState<HomeShell>
             icon: Icon(Icons.savings_outlined),
             selectedIcon: Icon(Icons.savings),
             label: 'Budgets',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.shopping_bag_outlined),
+            selectedIcon: Icon(Icons.shopping_bag),
+            label: 'Goals',
           ),
           NavigationDestination(
             icon: Icon(Icons.auto_awesome_outlined),

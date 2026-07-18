@@ -104,36 +104,25 @@ class AiService {
     required String contextSummary,
     required List<Map<String, dynamic>> tools,
   }) async {
-    final parts = await _generatePartsWithFallback(
+    final parts = await agentTurn(
       apiKey: apiKey,
       systemPrompt: _agentSystemPrompt,
-      userText:
-          'Spending summary (JSON):\n$contextSummary\n\nUser: $question',
-      temperature: 0.3,
+      contents: [
+        {
+          'role': 'user',
+          'parts': [
+            {
+              'text':
+                  'Spending summary (JSON):\n$contextSummary\n\nUser: $question'
+            }
+          ]
+        }
+      ],
+      tools: tools,
       maxTokens: 800,
-      tools: tools.isEmpty
-          ? null
-          : [
-              {'function_declarations': tools}
-            ],
     );
-
-    final buffer = StringBuffer();
-    final actions = <AiAction>[];
-    for (final part in parts) {
-      if (part is! Map<String, dynamic>) continue;
-      final call = part['functionCall'];
-      if (call is Map<String, dynamic>) {
-        final name = call['name'] as String?;
-        final args = (call['args'] as Map?)?.cast<String, dynamic>() ?? {};
-        if (name != null && name.isNotEmpty) actions.add(AiAction(name, args));
-      } else {
-        final text = part['text'] as String?;
-        if (text != null) buffer.write(text);
-      }
-    }
-    final text = buffer.toString().trim();
-    return AiChatResult(text.isEmpty ? null : text, actions);
+    final split = splitParts(parts);
+    return AiChatResult(split.text, split.calls);
   }
 
   /// General-purpose generation with the model-fallback chain. Powers the
@@ -192,6 +181,88 @@ class AiService {
     return result;
   }
 
+  /// Estimates the current typical retail price (₹, India) for a consumer
+  /// product the user named. Returns the price plus a short note (model/range).
+  /// Only the item name is sent — no financial data crosses the wire here.
+  Future<({double price, String note})> estimatePrice({
+    required String apiKey,
+    required String item,
+  }) async {
+    final system =
+        'You estimate the current typical retail price in India, in Indian '
+        'Rupees (INR), for a consumer product the user names. Give a realistic '
+        'mid-range price for a commonly-bought model/variant as of now. Reply '
+        'with ONLY a JSON object {"price": <number in rupees, no symbols/'
+        'commas>, "note": "<max 10 words: the model/segment or a rough range>"}'
+        '. No prose, no markdown.';
+    final raw = await _callWithFallback(
+      apiKey: apiKey,
+      systemPrompt: system,
+      userText: 'Item: $item',
+      temperature: 0.2,
+      maxTokens: 200,
+    );
+    try {
+      final map = jsonDecode(_extractJsonBlock(raw)) as Map<String, dynamic>;
+      final price = (map['price'] as num?)?.toDouble();
+      final note = (map['note'] as String?)?.trim() ?? '';
+      if (price == null || price <= 0) {
+        throw AiException('Could not estimate a price for that item.');
+      }
+      return (price: price, note: note);
+    } on AiException {
+      rethrow;
+    } catch (_) {
+      throw AiException('Could not read the price estimate. Try rephrasing.');
+    }
+  }
+
+  /// Extracts a transaction from ONE raw bank SMS the regex couldn't parse.
+  /// Sends the raw message text — callers MUST gate this on the user's explicit
+  /// SMS-parse consent. Returns `isTxn:false` for OTP/promo/reminders, or null
+  /// on a failed/unreadable response (so the caller can retry later).
+  Future<({bool isTxn, double? amount, String? type, String? merchant})?>
+      parseSms({
+    required String apiKey,
+    required String body,
+  }) async {
+    final system =
+        'You extract a single completed bank/UPI transaction from one Indian '
+        'bank SMS. Set is_transaction=false when the message is an OTP, a '
+        'promotion, a balance enquiry, or a payment REMINDER / bill due (money '
+        'has not actually moved yet). Reply with ONLY a JSON object '
+        '{"is_transaction": <bool>, "amount": <number in rupees, no symbols or '
+        'commas>, "type": "debit" | "credit", "merchant": <string or null>}. '
+        'No prose, no markdown.';
+    final raw = await _callWithFallback(
+      apiKey: apiKey,
+      systemPrompt: system,
+      userText: 'SMS: $body',
+      temperature: 0.0,
+      maxTokens: 200,
+    );
+    try {
+      final m = jsonDecode(_extractJsonBlock(raw)) as Map<String, dynamic>;
+      final isTxn = m['is_transaction'] == true;
+      if (!isTxn) return (isTxn: false, amount: null, type: null, merchant: null);
+      final amount = (m['amount'] as num?)?.toDouble();
+      final type = (m['type'] as String?)?.toLowerCase();
+      final merchant = (m['merchant'] as String?)?.trim();
+      if (amount == null || amount <= 0 ||
+          (type != 'debit' && type != 'credit')) {
+        return null; // unusable — let the caller retry / leave for manual.
+      }
+      return (
+        isTxn: true,
+        amount: amount,
+        type: type,
+        merchant: (merchant == null || merchant.isEmpty) ? null : merchant,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Asks the model to categorise a list of merchant names into the app's
   /// categories. Returns merchant → (category, confidence 0–100).
   /// Only merchant names are sent — no amounts, dates, or SMS text.
@@ -246,11 +317,11 @@ class AiService {
   }
 
   /// Like [_callWithFallback] but returns the raw response `parts` (so the
-  /// caller can read `functionCall` parts). Used by [chatWithActions].
+  /// caller can read `functionCall` parts) for a full multi-turn [contents].
   Future<List<dynamic>> _generatePartsWithFallback({
     required String apiKey,
     required String systemPrompt,
-    required String userText,
+    required List<Map<String, dynamic>> contents,
     required double temperature,
     required int maxTokens,
     List<Map<String, dynamic>>? tools,
@@ -262,7 +333,7 @@ class AiService {
           model: model,
           apiKey: apiKey,
           systemPrompt: systemPrompt,
-          userText: userText,
+          contents: contents,
           temperature: temperature,
           maxTokens: maxTokens,
           tools: tools,
@@ -275,11 +346,57 @@ class AiService {
         AiException('No available Gemini model for this key.');
   }
 
+  /// One turn of an agentic conversation: sends the full [contents] history
+  /// plus [tools] and returns the model's raw response `parts` (text and/or
+  /// `functionCall` parts). The caller drives the tool loop and appends turns.
+  Future<List<dynamic>> agentTurn({
+    required String apiKey,
+    required String systemPrompt,
+    required List<Map<String, dynamic>> contents,
+    required List<Map<String, dynamic>> tools,
+    double temperature = 0.3,
+    int maxTokens = 1024,
+  }) {
+    return _generatePartsWithFallback(
+      apiKey: apiKey,
+      systemPrompt: systemPrompt,
+      contents: contents,
+      temperature: temperature,
+      maxTokens: maxTokens,
+      tools: tools.isEmpty
+          ? null
+          : [
+              {'function_declarations': tools}
+            ],
+    );
+  }
+
+  /// Splits raw response [parts] into free-text and tool calls.
+  static ({String? text, List<AiAction> calls}) splitParts(
+      List<dynamic> parts) {
+    final buffer = StringBuffer();
+    final calls = <AiAction>[];
+    for (final part in parts) {
+      if (part is! Map) continue;
+      final call = part['functionCall'];
+      if (call is Map) {
+        final name = call['name'] as String?;
+        final args = (call['args'] as Map?)?.cast<String, dynamic>() ?? {};
+        if (name != null && name.isNotEmpty) calls.add(AiAction(name, args));
+      } else {
+        final text = part['text'] as String?;
+        if (text != null) buffer.write(text);
+      }
+    }
+    final text = buffer.toString().trim();
+    return (text: text.isEmpty ? null : text, calls: calls);
+  }
+
   Future<List<dynamic>> _generateParts({
     required String model,
     required String apiKey,
     required String systemPrompt,
-    required String userText,
+    required List<Map<String, dynamic>> contents,
     required double temperature,
     required int maxTokens,
     List<Map<String, dynamic>>? tools,
@@ -298,14 +415,7 @@ class AiService {
           {'text': systemPrompt}
         ]
       },
-      'contents': [
-        {
-          'role': 'user',
-          'parts': [
-            {'text': userText}
-          ]
-        }
-      ],
+      'contents': contents,
       'generationConfig': generationConfig,
       'tools': ?tools,
     });

@@ -2,8 +2,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/categories.dart';
 import '../services/ai_service.dart';
+import '../services/database_service.dart';
 import '../services/finance_context.dart';
+import '../services/transaction_query.dart';
 import '../utils/formatters.dart';
+import 'affordability.dart';
 import 'app_providers.dart';
 
 /// A concrete action the coach proposed and the user can apply or dismiss.
@@ -65,14 +68,126 @@ class ChatController extends Notifier<ChatState> {
   ChatState build() => const ChatState();
 
   static const suggestions = [
+    'Can I afford a PS5?',
     'Where is my money going?',
     'Set my food budget to ₹8000',
-    'Which merchant took most of my money?',
     'How can I save more this month?',
   ];
 
   /// Categories the coach may set a budget for (spending categories only).
   static const _budgetCategories = AppCategory.aiChoosable;
+
+  /// Cap on model↔tool round-trips per question — bounds latency and quota.
+  static const _maxTurns = 4;
+
+  static const _readToolNames = {
+    'search_transactions',
+    'spending_summary',
+    'can_i_afford',
+    'estimate_item_price',
+  };
+
+  /// READ tools: let the coach query the *full* transaction history locally so
+  /// it can answer any question with exact figures (not just the summary).
+  static final List<Map<String, dynamic>> _readTools = [
+    {
+      'name': 'search_transactions',
+      'description':
+          'Search the user\'s transactions and get the matching rows plus the '
+              'total. Use for specific questions like "how much at Dominos in '
+              'March" or "my biggest expenses last week". All filters optional.',
+      'parameters': {
+        'type': 'object',
+        'properties': {
+          'category': {'type': 'string', 'enum': AppCategory.all},
+          'merchant': {
+            'type': 'string',
+            'description': 'Merchant name or part of it (case-insensitive).'
+          },
+          'type': {
+            'type': 'string',
+            'enum': ['debit', 'credit']
+          },
+          'start_date': {
+            'type': 'string',
+            'description': 'Inclusive start, ISO date YYYY-MM-DD.'
+          },
+          'end_date': {
+            'type': 'string',
+            'description': 'Inclusive end, ISO date YYYY-MM-DD.'
+          },
+          'min_amount': {'type': 'number'},
+          'max_amount': {'type': 'number'},
+          'limit': {
+            'type': 'integer',
+            'description': 'Max rows to return (default 20, max 50).'
+          },
+        },
+      },
+    },
+    {
+      'name': 'can_i_afford',
+      'description':
+          'Check whether the user can afford a purchase right now. Uses their '
+              'real balance, upcoming subscriptions/EMIs, safety buffer, '
+              'savings goal, and next salary date. ALWAYS call this for "can I '
+              'buy/afford X" questions instead of guessing.',
+      'parameters': {
+        'type': 'object',
+        'properties': {
+          'price': {
+            'type': 'number',
+            'description': 'Purchase price in rupees. If the user did not give '
+                'one, call estimate_item_price first.'
+          },
+          'item': {'type': 'string', 'description': 'What they want to buy.'},
+        },
+        'required': ['price'],
+      },
+    },
+    {
+      'name': 'estimate_item_price',
+      'description':
+          'Estimate the current typical retail price (₹, India) of a consumer '
+              'product, e.g. "PS5", "iPhone 16", "1.5 ton AC". Use before '
+              'can_i_afford when the user names an item without a price.',
+      'parameters': {
+        'type': 'object',
+        'properties': {
+          'item': {'type': 'string'},
+        },
+        'required': ['item'],
+      },
+    },
+    {
+      'name': 'spending_summary',
+      'description':
+          'Get totals grouped by category, merchant, month, or day (with '
+              'optional filters). Use for "where did my money go", "top '
+              'merchants", or "spend per month".',
+      'parameters': {
+        'type': 'object',
+        'properties': {
+          'group_by': {
+            'type': 'string',
+            'enum': ['category', 'merchant', 'month', 'day']
+          },
+          'category': {'type': 'string', 'enum': AppCategory.all},
+          'merchant': {'type': 'string'},
+          'type': {
+            'type': 'string',
+            'enum': ['debit', 'credit']
+          },
+          'start_date': {'type': 'string'},
+          'end_date': {'type': 'string'},
+        },
+        'required': ['group_by'],
+      },
+    },
+  ];
+
+  /// All tools handed to the model = read tools + write/action tools.
+  static final List<Map<String, dynamic>> _allTools = [..._readTools, ..._tools];
 
   /// Gemini function-declarations describing the actions the coach can take.
   static final List<Map<String, dynamic>> _tools = [
@@ -156,34 +271,83 @@ class ChatController extends Notifier<ChatState> {
       }
 
       final db = ref.read(databaseProvider);
-      final context = FinanceContext.build(
+      final now = DateTime.now();
+      final summary = FinanceContext.build(
         txns,
-        now: DateTime.now(),
+        now: now,
         budgets: await db.getBudgets(),
         goalMonthlySave: await settings.getMonthlySavingsGoal(),
       );
-      final result = await ref.read(aiServiceProvider).chatWithActions(
-            apiKey: apiKey,
-            question: q,
-            contextSummary: context,
-            tools: _tools,
-          );
 
-      final actions = result.actions
-          .map(_toProposed)
-          .whereType<ProposedAction>()
-          .toList();
+      final ai = ref.read(aiServiceProvider);
+      final contents = <Map<String, dynamic>>[
+        {
+          'role': 'user',
+          'parts': [
+            {
+              'text': 'High-level summary (JSON):\n$summary\n\n'
+                  'User question: $q'
+            }
+          ]
+        }
+      ];
 
-      // Fall back to a friendly line if the model only returned tool calls.
-      final text = result.text ??
-          (actions.isEmpty
-              ? 'Sorry, I couldn\'t work that out.'
+      final proposed = <ProposedAction>[];
+      String? finalText;
+
+      // Multi-turn tool loop: the model calls read tools (answered locally from
+      // the full history) and/or proposes write actions, until it replies with
+      // text or we hit the turn cap.
+      for (var turn = 0; turn < _maxTurns; turn++) {
+        final parts = await ai.agentTurn(
+          apiKey: apiKey,
+          systemPrompt: _systemPrompt(now),
+          contents: contents,
+          tools: _allTools,
+        );
+        final split = AiService.splitParts(parts);
+        if (split.text != null) finalText = split.text;
+        if (split.calls.isEmpty) break;
+
+        // Echo the model's tool-call turn back verbatim (required by the API).
+        contents.add({'role': 'model', 'parts': parts});
+
+        final responses = <Map<String, dynamic>>[];
+        for (final call in split.calls) {
+          if (_readToolNames.contains(call.name)) {
+            responses.add({
+              'functionResponse': {
+                'name': call.name,
+                'response': await _runReadTool(call, txns, apiKey),
+              }
+            });
+          } else {
+            final p = _toProposed(call);
+            if (p != null) proposed.add(p);
+            responses.add({
+              'functionResponse': {
+                'name': call.name,
+                'response': {
+                  'status': p == null
+                      ? 'rejected: invalid arguments'
+                      : 'queued — the user will confirm before it is applied',
+                }
+              }
+            });
+          }
+        }
+        contents.add({'role': 'user', 'parts': responses});
+      }
+
+      final text = finalText ??
+          (proposed.isEmpty
+              ? 'I couldn\'t work that out from your data.'
               : 'Here\'s what I can do — confirm to apply:');
 
       state = state.copyWith(
         messages: [
           ...state.messages,
-          ChatMessage(text, isUser: false, actions: actions),
+          ChatMessage(text, isUser: false, actions: proposed),
         ],
         sending: false,
       );
@@ -193,6 +357,130 @@ class ChatController extends Notifier<ChatState> {
       _addError('Something went wrong. Please try again.');
     }
   }
+
+  String _systemPrompt(DateTime now) {
+    final today = now.toIso8601String().split('T').first;
+    return 'You are FinCoach, a sharp, warm personal-finance coach in an Indian '
+        'rupee (₹) money app. Today is $today. You have a high-level JSON '
+        'summary of the user\'s finances, and you can call TOOLS to look up the '
+        'exact answer to ANY question about their money:\n'
+        '- search_transactions / spending_summary READ the full transaction '
+        'history — use them for specific figures, date ranges, merchants or '
+        'categories instead of guessing from the summary.\n'
+        '- For "can I buy/afford X": call estimate_item_price if no price was '
+        'given, then can_i_afford. Answer verdict-first ("Yes." / "Tight." / '
+        '"No."), then what buying leaves after upcoming bills, the savings-goal '
+        'delay in days, and — when tight or no — the smarter alternative '
+        '(e.g. "wait N days until salary").\n'
+        '- set_budget / remove_budget / set_savings_goal / recategorize_merchant '
+        'ACT on the user\'s data.\n'
+        'Rules: prefer a tool call over guessing; ground every number in tool '
+        'results or the summary and never invent figures. Convert relative '
+        'dates ("last month", "since Diwali") into concrete YYYY-MM-DD ranges '
+        'from today\'s date. When you have enough to answer, reply in short, '
+        'direct markdown with ₹ amounts. For actions, the app asks the user to '
+        'confirm first, so briefly state what you\'re proposing.';
+  }
+
+  /// Executes a read tool against the in-memory [txns] (plus, for price
+  /// estimation, one Gemini call) and returns the JSON-able result to feed
+  /// back to the model.
+  Future<Map<String, dynamic>> _runReadTool(
+      AiAction call, List<Transaction> txns, String apiKey) async {
+    if (call.name == 'estimate_item_price') {
+      final item = (call.args['item'] as String?)?.trim() ?? '';
+      if (item.isEmpty) return {'error': 'no item given'};
+      try {
+        final r = await ref
+            .read(aiServiceProvider)
+            .estimatePrice(apiKey: apiKey, item: item);
+        return {'item': item, 'price': r.price, 'note': r.note};
+      } catch (_) {
+        return {'error': 'could not estimate — ask the user for the price'};
+      }
+    }
+
+    if (call.name == 'can_i_afford') {
+      final price = (call.args['price'] as num?)?.toDouble();
+      if (price == null || price <= 0) return {'error': 'invalid price'};
+      final saving = ref.read(monthlySavingProvider);
+      final cap = ref.read(savingsCapacityProvider);
+      final r = Affordability.check(
+        txns,
+        price: price,
+        now: DateTime.now(),
+        monthlySaving: saving.amount,
+        monthlyIncome: cap.monthlyIncome,
+      );
+      return {
+        'verdict': r.verdict.name,
+        'price': _round(r.price),
+        'known_balance': _round(r.knownBalance),
+        'accounts_counted': r.accountsCounted,
+        'upcoming_recurring_this_month': _round(r.upcomingRecurring),
+        'upcoming_charges': [
+          for (final u in r.upcomingCharges.take(6))
+            {'merchant': u.merchant, 'amount': _round(u.amount)},
+        ],
+        'left_after_purchase_and_bills': _round(r.leftAfter),
+        'safety_buffer': _round(r.buffer),
+        'savings_goal_delay_days': r.goalDelayDays,
+        'days_until_next_salary': r.daysUntilSalary,
+      };
+    }
+
+    final filter = _filterFromArgs(call.args);
+    if (call.name == 'spending_summary') {
+      final groupBy = (call.args['group_by'] as String?) ?? 'category';
+      final totals = TransactionQuery.aggregate(txns, filter, groupBy);
+      final capped = <String, double>{};
+      for (final e in totals.entries.take(25)) {
+        capped[e.key] = _round(e.value);
+      }
+      return {'group_by': groupBy, 'totals': capped};
+    }
+    // search_transactions (default)
+    final limit = (call.args['limit'] as num?)?.toInt() ?? 20;
+    final r = TransactionQuery.search(txns, filter, limit: limit.clamp(1, 50));
+    return {
+      'match_count': r.count,
+      'total_amount': _round(r.total),
+      'transactions': [
+        for (final t in r.rows)
+          {
+            'date': t.date.toIso8601String().split('T').first,
+            'merchant': t.merchantCanonical ?? t.merchant,
+            'category': t.category,
+            'type': t.transactionType,
+            'amount': _round(t.amount),
+          }
+      ],
+    };
+  }
+
+  TxnFilter _filterFromArgs(Map<String, dynamic> a) {
+    DateTime? parse(dynamic v, {bool endOfDay = false}) {
+      if (v is! String || v.trim().isEmpty) return null;
+      final d = DateTime.tryParse(v.trim());
+      if (d == null) return null;
+      return endOfDay
+          ? DateTime(d.year, d.month, d.day, 23, 59, 59)
+          : DateTime(d.year, d.month, d.day);
+    }
+
+    final type = (a['type'] as String?)?.toLowerCase();
+    return TxnFilter(
+      category: _asCategory(a['category'], AppCategory.all),
+      merchant: (a['merchant'] as String?)?.trim(),
+      type: (type == 'debit' || type == 'credit') ? type : null,
+      start: parse(a['start_date']),
+      end: parse(a['end_date'], endOfDay: true),
+      minAmount: (a['min_amount'] as num?)?.toDouble(),
+      maxAmount: (a['max_amount'] as num?)?.toDouble(),
+    );
+  }
+
+  double _round(double v) => (v * 100).roundToDouble() / 100;
 
   /// Applies every action attached to the message at [index], then posts a
   /// confirmation summarising what changed.
